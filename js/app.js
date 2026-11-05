@@ -12,12 +12,17 @@
   const UNLOCK = '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M9 10h9a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h1V7a5 5 0 0 1 9.6-2l-1.8.9A3 3 0 0 0 9 7v3z"/></svg>';
 
   // ---------- Lagring ----------
-  const blank = () => ({ version: 1, rooms: [], classes: [], results: [], current: null });
+  const blank = () => ({ version: 1, rooms: [], classes: [], results: [], current: null, gr: { cur: null, history: [] } });
+  function normalize(d) {
+    const out = Object.assign(blank(), d);
+    out.gr = Object.assign({ cur: null, history: [] }, d.gr || {});
+    return out;
+  }
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
       if (!raw) return blank();
-      return Object.assign(blank(), JSON.parse(raw));
+      return normalize(JSON.parse(raw));
     } catch (e) { return blank(); }
   }
   let S = load();
@@ -103,12 +108,13 @@
 
   // Ritar klassrummet. edit = redigeringsläge med rutnät.
   function roomGrid(r, opt) {
-    const flip = !opt.edit && ui.flipped;
+    const flip = ui.flipped;
     const J = joins(r);
     let h = `<div class="grid ${opt.edit ? 'edit' : ''}" style="--cols:${r.cols};--rows:${r.rows}">`;
     if (opt.edit) {
       for (let y = 0; y < r.rows; y++) for (let x = 0; x < r.cols; x++) {
-        h += `<div class="cell" data-x="${x}" data-y="${y}" style="grid-column:${x + 1};grid-row:${y + 1}"></div>`;
+        const dx = flip ? r.cols - 1 - x : x, dy = flip ? r.rows - 1 - y : y;
+        h += `<div class="cell" data-x="${x}" data-y="${y}" style="grid-column:${dx + 1};grid-row:${dy + 1}"></div>`;
       }
     }
     r.desks.forEach(d => {
@@ -131,7 +137,8 @@
   function render() {
     document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === ui.tab));
     const v = $('#view');
-    ({ lottning: renderLottning, klasser: renderKlasser, klassrum: renderKlassrum, sparade: renderSparade, data: renderData }[ui.tab] || renderLottning)(v);
+    const grupprum = el => (window.Grupprum ? window.Grupprum.render(el) : renderLottning(el));
+    ({ lottning: renderLottning, grupprum, klasser: renderKlasser, klassrum: renderKlassrum, sparade: renderSparade, data: renderData }[ui.tab] || renderLottning)(v);
     saveUi();
   }
 
@@ -472,9 +479,21 @@
       <div class="row wrap gap">
         <div class="seg tools">${tools.map(([t, l]) => `<button class="${ui.tool === t ? 'on' : ''}" data-tool="${t}">${l}</button>`).join('')}</div>
         <button class="btn ghost" data-action="clear-desks" ${r.desks.length ? '' : 'disabled'}>Rensa alla bänkar</button>
+        <span class="spacer"></span>
+        <button class="btn ghost" data-action="flip">${ui.flipped ? 'Elevvy (tavlan uppe)' : 'Lärarvy (tavlan nere)'}</button>
       </div>
       <p class="hint">${hints[ui.tool] || ''}</p>
       ${roomGrid(r, { edit: true })}
+      <div class="add-box gr-config">
+        <div class="row between"><b>Grupprum till ${esc(r.name)}</b><button class="btn" data-action="add-gr">+ Lägg till grupprum</button></div>
+        ${(r.groupRooms || []).length ? `<div class="gr-rows">${r.groupRooms.map(g => `
+          <div class="row wrap gap gr-row">
+            <input value="${esc(g.name)}" data-gr-name="${g.id}" aria-label="Grupprummets namn">
+            <label class="row small muted">Max grupper <input type="number" min="1" max="10" value="${g.maxGroups || 1}" data-gr-max="${g.id}"></label>
+            <button class="icon danger" data-gr-del="${g.id}" title="Ta bort grupprummet">×</button>
+          </div>`).join('')}</div>` : '<p class="muted small">Inga grupprum ännu. Lägg till de grupprum som hör till det här klassrummet – de används under fliken Grupprum.</p>'}
+        <label class="row small muted">Max grupper som stannar i klassrummet <input type="number" min="1" max="20" value="${r.mainMaxGroups || ''}" placeholder="alla" data-main-max></label>
+      </div>
       <details class="add-box">
         <summary>Snabbmall – skapa bänkrader automatiskt</summary>
         <div class="row wrap gap">
@@ -501,9 +520,8 @@
       else if (ui.moving) {
         const d = r.desks.find(dd => dd.id === ui.moving);
         if (d) {
-          if (fits(r, x, y, d.orient, d.id)) { d.x = x; d.y = y; }
-          else if (d.orient !== 'v' && fits(r, x - 1, y, 'h', d.id)) { d.x = x - 1; d.y = y; }
-          else if (d.orient === 'v' && fits(r, x, y - 1, 'v', d.id)) { d.x = x; d.y = y - 1; }
+          const spot = findSpot(r, x, y, d.orient === 'v' ? 'v' : 'h', d.id);
+          if (spot) { d.x = spot[0]; d.y = spot[1]; }
           else { toast('Bänken får inte plats där.'); return; }
         }
         ui.moving = null;
@@ -516,14 +534,21 @@
         else toast('Bänken kan inte vridas här – det är fullt.');
       } else {
         const o = ui.tool === 'v' ? 'v' : 'h';
-        let px = x, py = y;
-        if (!fits(r, px, py, o)) { if (o === 'h') px = x - 1; else py = y - 1; }
-        if (fits(r, px, py, o)) r.desks.push({ id: uid(), x: px, y: py, orient: o });
+        const spot = findSpot(r, x, y, o);
+        if (spot) r.desks.push({ id: uid(), x: spot[0], y: spot[1], orient: o });
         else { toast('Bänken får inte plats där.'); return; }
       }
     }
     save();
     render();
+  }
+
+  // Hittar var en bänk ska stå när man klickar på en ruta. I tavelvyn växer
+  // bänken åt andra hållet i modellen, så att den ser ut att växa åt höger/nedåt.
+  function findSpot(r, x, y, o, ignore) {
+    const alt = o === 'h' ? [x - 1, y] : [x, y - 1];
+    const tries = ui.flipped ? [alt, [x, y]] : [[x, y], alt];
+    return tries.find(([px, py]) => fits(r, px, py, o, ignore)) || null;
   }
 
   function resizeRoom(r, cols, rows) {
@@ -564,7 +589,7 @@
           <label class="btn">Återställ från fil (ersätter allt)<input type="file" accept=".json,application/json" data-import="replace" hidden></label>
           <label class="btn">Importera och lägg till<input type="file" accept=".json,application/json" data-import="merge" hidden></label>
         </div>
-        <p class="muted small">Just nu: ${S.rooms.length} klassrum · ${S.classes.length} klasser · ${S.classes.reduce((n, c) => n + c.students.length, 0)} elever · ${S.results.length} sparade placeringar.</p>
+        <p class="muted small">Just nu: ${S.rooms.length} klassrum · ${S.classes.length} klasser · ${S.classes.reduce((n, c) => n + c.students.length, 0)} elever · ${S.results.length} sparade placeringar · ${S.gr.history.length} grupprumstillfällen.</p>
       </section>
       <section class="card">
         <h2 class="h">Så fungerar lottningen</h2>
@@ -591,7 +616,10 @@
   }
 
   function loadSample() {
-    const r = { id: uid(), name: 'Exempelsal', cols: 0, rows: 0, desks: [] };
+    const r = {
+      id: uid(), name: 'Exempelsal', cols: 0, rows: 0, desks: [],
+      groupRooms: [{ id: uid(), name: 'Grupprum 1', maxGroups: 1 }, { id: uid(), name: 'Grupprum 2', maxGroups: 1 }, { id: uid(), name: 'Biblioteket', maxGroups: 2 }]
+    };
     applyTemplate(r, 4, 4, 2);
     const names = [['Alva', 't'], ['Elias', 'k'], ['Maja', 't'], ['Hugo', 'k'], ['Ella', 't'], ['Liam', 'k'], ['Wilma', 't'], ['Noah', 'k'],
       ['Alice', 't'], ['William', 'k'], ['Saga', 't'], ['Oscar', 'k'], ['Ebba', 't'], ['Lucas', 'k'], ['Astrid', 't'], ['Adam', 'k'],
@@ -682,13 +710,22 @@
     },
     'dup-room': () => {
       const r = room(ui.roomId);
-      const copy = { id: uid(), name: r.name + ' (kopia)', cols: r.cols, rows: r.rows, desks: r.desks.map(d => ({ ...d, id: uid() })) };
+      const copy = {
+        id: uid(), name: r.name + ' (kopia)', cols: r.cols, rows: r.rows, desks: r.desks.map(d => ({ ...d, id: uid() })),
+        groupRooms: (r.groupRooms || []).map(g => ({ ...g, id: uid() })), mainMaxGroups: r.mainMaxGroups
+      };
       S.rooms.push(copy); ui.roomId = copy.id; save(); render();
     },
     'del-room': () => {
       const r = room(ui.roomId);
       if (!r || !confirm(`Ta bort klassrummet "${r.name}"?`)) return;
       S.rooms = S.rooms.filter(x => x !== r); ui.roomId = null; save(); render();
+    },
+    'add-gr': () => {
+      const r = room(ui.roomId);
+      r.groupRooms = r.groupRooms || [];
+      r.groupRooms.push({ id: uid(), name: 'Grupprum ' + (r.groupRooms.length + 1), maxGroups: 1 });
+      save(); render();
     },
     'clear-desks': () => {
       const r = room(ui.roomId);
@@ -721,6 +758,7 @@
     const t = e.target;
     const go = t.closest('[data-go]');
     if (go) { ui.tab = go.dataset.go; render(); return; }
+    if (ui.tab === 'grupprum' && window.Grupprum && window.Grupprum.onClick(e)) return;
     const act = t.closest('[data-action]');
     if (act) { if (!act.disabled) actions[act.dataset.action]?.(act); return; }
 
@@ -772,6 +810,12 @@
     // Klassrum
     const pr = t.closest('[data-pick-room]');
     if (pr) { ui.roomId = pr.dataset.pickRoom; ui.moving = null; render(); return; }
+    const grDel = t.closest('[data-gr-del]');
+    if (grDel) {
+      const r = room(ui.roomId), g = r.groupRooms.find(x => x.id === grDel.dataset.grDel);
+      if (!confirm(`Ta bort ${g.name}? Historiken i cirkulationsschemat finns kvar.`)) return;
+      r.groupRooms = r.groupRooms.filter(x => x !== g); save(); render(); return;
+    }
     const tool = t.closest('[data-tool]');
     if (tool) { ui.tool = tool.dataset.tool; ui.moving = null; render(); return; }
     const desk = t.closest('.grid.edit .desk');
@@ -806,6 +850,7 @@
 
   function onChange(e) {
     const t = e.target;
+    if (ui.tab === 'grupprum' && window.Grupprum && window.Grupprum.onChange(e)) return;
     if (t.matches('[data-field]')) {
       const c = ensureCurrent(), f = t.dataset.field;
       if (f === 'classId') { c.classId = t.value; c.assignment = {}; c.locks = []; c.absent = []; c.savedId = null; }
@@ -824,6 +869,18 @@
     if (t.matches('[data-room-name]')) { const r = room(ui.roomId); r.name = t.value.trim() || r.name; save(); render(); return; }
     if (t.matches('[data-room-cols]')) { const r = room(ui.roomId); resizeRoom(r, clamp(parseInt(t.value, 10) || r.cols, 2, 24), r.rows); return; }
     if (t.matches('[data-room-rows]')) { const r = room(ui.roomId); resizeRoom(r, r.cols, clamp(parseInt(t.value, 10) || r.rows, 2, 20)); return; }
+    if (t.matches('[data-gr-name]')) {
+      const g = room(ui.roomId).groupRooms.find(x => x.id === t.dataset.grName);
+      g.name = t.value.trim() || g.name; save(); render(); return;
+    }
+    if (t.matches('[data-gr-max]')) {
+      const g = room(ui.roomId).groupRooms.find(x => x.id === t.dataset.grMax);
+      g.maxGroups = clamp(parseInt(t.value, 10) || 1, 1, 10); save(); render(); return;
+    }
+    if (t.matches('[data-main-max]')) {
+      const r = room(ui.roomId), n = parseInt(t.value, 10);
+      r.mainMaxGroups = n > 0 ? clamp(n, 1, 20) : null; save(); render(); return;
+    }
     if (t.matches('[data-res-filter]')) { ui.resFilter = t.value; render(); return; }
     if (t.matches('[data-import]')) {
       const file = t.files[0];
@@ -834,18 +891,25 @@
         if (!Array.isArray(d.rooms) || !Array.isArray(d.classes)) throw new Error('bad');
         if (mode === 'replace') {
           if (!confirm('Ersätta all data i appen med innehållet i filen?')) return;
-          S = Object.assign(blank(), d);
+          S = normalize(d);
         } else {
           ['rooms', 'classes', 'results'].forEach(key => {
             const have = new Set(S[key].map(x => x.id));
             (d[key] || []).forEach(x => { if (!have.has(x.id)) S[key].push(x); });
           });
+          const haveH = new Set(S.gr.history.map(x => x.id));
+          ((d.gr && d.gr.history) || []).forEach(x => { if (!haveH.has(x.id)) S.gr.history.push(x); });
         }
         save(); render(); toast('Importen är klar.');
       }).catch(() => toast('Filen kunde inte läsas – är det en säkerhetskopia från appen?'));
       t.value = '';
     }
   }
+
+  // Delas med grupprum.js
+  window.BP = {
+    get S() { return S; }, ui, save, render, toast, esc, uid, clamp, room, klass, roomGrid, fmtDate, ensureCurrent
+  };
 
   document.addEventListener('DOMContentLoaded', () => {
     const view = $('#view');
