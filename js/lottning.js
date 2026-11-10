@@ -75,9 +75,11 @@ const Lottning = (() => {
     const hasWish = new Uint8Array(n), g = new Uint8Array(n);
     const usePos = opts.pos !== false;
     const pm = new Uint16Array(n), ps = new Uint8Array(n);
+    const al = new Uint8Array(n); // 1 = vill sitta själv, 2 = måste sitta själv (strikt)
     students.forEach((s, i) => {
       g[i] = s.gender === 'k' ? 1 : s.gender === 't' ? 2 : 0;
       if (usePos) { pm[i] = posMaskOf(s); ps[i] = pm[i] && s.pos.strict ? 1 : 0; }
+      if (opts.wishes !== false && s.alone) al[i] = s.alone.strict ? 2 : 1;
       (s.wishes || []).forEach(id => {
         const j = idx.get(id);
         if (j !== undefined && j !== i) { W[i * n + j] = 1; hasWish[i] = 1; }
@@ -88,7 +90,7 @@ const Lottning = (() => {
       });
     });
     return {
-      G, n, idx, W, A, hasWish, g, pm, ps,
+      G, n, idx, W, A, hasWish, g, pm, ps, al,
       useW: opts.wishes !== false,
       useA: opts.avoid !== false,
       rule: opts.gender || 'none'
@@ -98,7 +100,7 @@ const Lottning = (() => {
   // Poäng för en placering (högre = bättre).
   function score(P, arr) {
     const { G, n, W, A, hasWish, g, useW, useA, rule } = P;
-    const posM = P.pm, posS = P.ps;
+    const posM = P.pm, posS = P.ps, alone = P.al;
     const { partner, neigh, zone } = G;
     let sc = 0;
     for (let p = 0; p < arr.length; p++) {
@@ -128,7 +130,8 @@ const Lottning = (() => {
         }
       }
       if (useW && hasWish[a] && met > 0) sc += 100 + pm * 15 + (met - 1) * 4;
-      if (!adj) sc -= 20; // sitter ensam – låt hellre tomma platser samlas i hela bänkar
+      if (alone[a]) { if (adj) sc -= alone[a] === 2 ? 3000 : 120; } // vill sitta själv
+      else if (!adj) sc -= 20; // sitter ensam – låt hellre tomma platser samlas i hela bänkar
       if (posM[a] && !(zone[p] & posM[a])) sc -= posS[a] ? 3000 : 70; // platsönskemål
     }
     return sc;
@@ -266,7 +269,7 @@ const Lottning = (() => {
     const byId = new Map(students.map(s => [s.id, s]));
     const at = G.seats.map(s => { const id = assignment[s.id]; return byId.has(id) ? id : null; });
     const info = {};
-    const sum = { withWish: 0, met: 0, unmet: [], avoid: [], same: 0, mixed: 0, unplaced: [], posWith: 0, posMet: 0, posFail: [], posStrictFail: [] };
+    const sum = { withWish: 0, met: 0, unmet: [], avoid: [], same: 0, mixed: 0, unplaced: [], posWith: 0, posMet: 0, posFail: [], posStrictFail: [], aloneWith: 0, aloneMet: 0, aloneFail: [], aloneStrictFail: [] };
     const placed = new Set(at.filter(Boolean));
     G.seats.forEach((seat, p) => {
       const id = at[p];
@@ -281,9 +284,17 @@ const Lottning = (() => {
       const avoidHit = opts.avoid !== false
         ? adj.filter(x => (s.avoid || []).includes(x) || (byId.get(x).avoid || []).includes(id))
         : [];
+      const wantAlone = opts.wishes !== false && !!s.alone;
+      const aloneOk = wantAlone ? adj.length === 0 : null;
+      if (wantAlone) {
+        sum.aloneWith++;
+        if (aloneOk) sum.aloneMet++;
+        else if (s.alone.strict) sum.aloneStrictFail.push(id);
+        else sum.aloneFail.push(id);
+      }
       const pmask = opts.pos !== false ? posMaskOf(s) : 0;
       const posOk = pmask ? !!(G.zone[p] & pmask) : null;
-      info[id] = { seatId: seat.id, partner, neigh, hasWish, metIds, avoidHit, posOk, posStrict: !!(pmask && s.pos.strict), zr: seat.zr, zc: seat.zc };
+      info[id] = { seatId: seat.id, partner, neigh, hasWish, metIds, avoidHit, posOk, posStrict: !!(pmask && s.pos.strict), wantAlone, aloneOk, aloneStrict: !!(wantAlone && s.alone.strict), zr: seat.zr, zc: seat.zc };
       if (pmask) {
         sum.posWith++;
         if (posOk) sum.posMet++;

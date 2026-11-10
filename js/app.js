@@ -6,8 +6,13 @@
 
   // ---------- Version och uppdateringar ----------
   // Höj APP_VERSION och version.json tillsammans vid varje ny version.
-  const APP_VERSION = '1.3.0';
+  const APP_VERSION = '1.4.0';
   const CHANGELOG = [
+    { v: '1.4.0', date: '2026-11-10', items: [
+      'Nytt önskemål: <b>Vill sitta själv</b> – eleven får ingen bänkkompis och ingen granne precis bredvid sig. Väljs i samma ruta som önskemålen om vem man vill sitta med.',
+      'Även "sitta själv" kan vara <b>strikt</b> (måste följas) eller ett vanligt önskemål.',
+      'Lottningen visar hur många av dem som vill sitta själva som fick det, och varnar om det finns för få tomma platser.'
+    ] },
     { v: '1.3.0', date: '2026-11-10', items: [
       'Platsönskemål: välj var i klassrummet en elev vill sitta, i ett rutnät med 3 × 3 rutor (fram/mitten/bak och vänster/mitten/höger).',
       'Varje platsönskemål kan vara <b>strikt</b> (måste följas) eller ett vanligt önskemål som appen försöker uppfylla.',
@@ -225,11 +230,13 @@
     const nm = id => ctx.all.get(id)?.name || '?';
     let mark = '';
     if (inf.avoidHit && inf.avoidHit.length) mark = '<span class="mk bad">!</span>';
+    else if (inf.wantAlone) mark = inf.aloneOk ? '<span class="mk ok">✓</span>' : `<span class="mk ${inf.aloneStrict ? 'bad' : 'no'}">–</span>`;
     else if (inf.hasWish) mark = inf.metIds.length ? '<span class="mk ok">✓</span>' : '<span class="mk no">–</span>';
     if (inf.posOk === true) mark += '<span class="pm ok"></span>';
     else if (inf.posOk === false) mark += `<span class="pm ${inf.posStrict ? 'bad' : 'no'}"></span>`;
     const tip = [st.name];
-    if ((st.wishes || []).length) tip.push('Önskar: ' + st.wishes.map(nm).join(', '));
+    if (st.alone) tip.push(`Vill sitta själv${st.alone.strict ? ' (strikt)' : ''} – ${inf.aloneOk ? 'uppfyllt' : 'inte uppfyllt'}`);
+    else if ((st.wishes || []).length) tip.push('Önskar: ' + st.wishes.map(nm).join(', '));
     if (inf.partner) tip.push('Bänkkompis: ' + nm(inf.partner));
     if (inf.neigh && inf.neigh.length) tip.push('Granne: ' + inf.neigh.map(nm).join(', '));
     if (inf.avoidHit && inf.avoidHit.length) tip.push('Ska inte sitta med: ' + inf.avoidHit.map(nm).join(', '));
@@ -281,11 +288,18 @@
           : '<div class="stat"><b>–</b><span>inga önskemål ifyllda</span></div>';
       }
       if (c.opts.avoid) rep += `<div class="stat ${sm.avoid.length ? 'bad' : 'good'}"><b>${sm.avoid.length}</b><span>${sm.avoid.length === 1 ? 'krock' : 'krockar'} med "ska inte sitta med"</span></div>`;
+      if (c.opts.wishes && sm.aloneWith) rep += `<div class="stat ${sm.aloneStrictFail.length ? 'bad' : sm.aloneMet === sm.aloneWith ? 'good' : ''}"><b>${sm.aloneMet} / ${sm.aloneWith}</b><span>sitter själva som de önskat</span></div>`;
       if (c.opts.pos && sm.posWith) rep += `<div class="stat ${sm.posStrictFail.length ? 'bad' : sm.posMet === sm.posWith ? 'good' : ''}"><b>${sm.posMet} / ${sm.posWith}</b><span>sitter där de önskat i rummet</span></div>`;
       if (sm.same + sm.mixed) rep += `<div class="stat"><b>${sm.same} / ${sm.mixed}</b><span>bänkpar samma kön / blandade</span></div>`;
       rep += `<div class="stat"><b>${present.length - sm.unplaced.length} / ${seats}</b><span>platser används</span></div>`;
       rep += '</div>';
       if (c.opts.wishes && sm.unmet.length) rep += `<p class="small"><b>Önskemål ej uppfyllt:</b> ${sm.unmet.map(id => esc(nm(id))).join(', ')}</p>`;
+      if (c.opts.wishes && (sm.aloneFail.length || sm.aloneStrictFail.length)) {
+        const freeSeats = seats - (present.length - sm.unplaced.length);
+        const why = freeSeats < sm.aloneWith ? ` Det finns bara ${freeSeats} tomma ${freeSeats === 1 ? 'plats' : 'platser'} – varje elev som sitter själv behöver minst en tom plats bredvid sig.` : '';
+        if (sm.aloneStrictFail.length) rep += `<p class="small bad-text"><b>Fick inte sitta själv (strikt):</b> ${sm.aloneStrictFail.map(id => esc(nm(id))).join(', ')}.${why}</p>`;
+        if (sm.aloneFail.length) rep += `<p class="small"><b>Ville sitta själv men fick sällskap:</b> ${sm.aloneFail.map(id => esc(nm(id))).join(', ')}.${sm.aloneStrictFail.length ? '' : why}</p>`;
+      }
       if (c.opts.pos && sm.posStrictFail.length) rep += `<p class="small bad-text"><b>Strikt platskrav gick inte att uppfylla:</b> ${sm.posStrictFail.map(id => esc(nm(id) + ' (' + posText(all.get(id)) + ')')).join(', ')} – finns det tillräckligt många platser i de valda rutorna?</p>`;
       if (c.opts.pos && sm.posFail.length) rep += `<p class="small"><b>Platsönskemål ej uppfyllt:</b> ${sm.posFail.map(id => esc(nm(id))).join(', ')}</p>`;
       if (sm.avoid.length) rep += `<p class="small bad-text"><b>Sitter bredvid någon de inte ska:</b> ${sm.avoid.map(([a, b]) => esc(nm(a) + ' & ' + nm(b))).join(', ')}</p>`;
@@ -334,7 +348,7 @@
         ${roomGrid(r, { edit: false, seatHTML: id => seatHTML(id, ctx) })}
         <div class="legend no-print">
           <span><i class="sw g-k"></i>Kille</span><span><i class="sw g-t"></i>Tjej</span>
-          <span><b class="mk ok">✓</b> sitter med någon hen önskat</span>
+          <span><b class="mk ok">✓</b> önskemål uppfyllt (sitter med någon hen önskat, eller själv)</span>
           <span><b class="mk no">–</b> önskemål ej uppfyllt</span>
           <span><b class="mk bad">!</b> bredvid någon hen inte ska sitta med</span>
           <span><i class="pm ok"></i> plats enligt önskemål</span>
@@ -418,7 +432,7 @@
     const sById = new Map(k.students.map(s => [s.id, s]));
     const nameOf = id => sById.get(id)?.name;
     const boys = k.students.filter(s => s.gender === 'k').length, girls = k.students.filter(s => s.gender === 't').length;
-    const withW = k.students.filter(s => (s.wishes || []).length).length;
+    const withW = k.students.filter(s => (s.wishes || []).length || s.alone).length;
     const withP = k.students.filter(s => posCells(s).length).length;
     const max = k.maxWishes ?? 3;
     const rows = k.students.map(s => {
@@ -431,7 +445,7 @@
         <td><input class="sname" value="${esc(s.name)}" data-sname="${s.id}" aria-label="Namn"></td>
         <td><div class="seg">${[['', '–'], ['k', 'Kille'], ['t', 'Tjej']].map(([g, l]) =>
           `<button class="${(s.gender || '') === g ? 'on' : ''} ${g ? 'g-' + g : ''}" data-gender="${g}" data-sid="${s.id}">${l}</button>`).join('')}</div></td>
-        <td><button class="chipbox" data-edit-wishes="${s.id}">${wch || '<span class="add">+ Önska</span>'}</button></td>
+        <td><button class="chipbox" data-edit-wishes="${s.id}">${s.alone ? `<span class="chip sm alone">Sitter själv</span>${s.alone.strict ? '<span class="tag strict">strikt</span>' : ''}` : wch || '<span class="add">+ Önska</span>'}</button></td>
         <td><button class="chipbox" data-edit-avoid="${s.id}">${ach || '<span class="add">+ Lägg till</span>'}</button></td>
         <td><button class="chipbox posbox" data-edit-pos="${s.id}" title="${esc(posText(s) || 'Inget platsönskemål')}">${posCells(s).length ? `${miniGrid(s)}${s.pos.strict ? '<span class="tag strict">strikt</span>' : ''}` : '<span class="add">+ Plats</span>'}</button></td>
         <td><button class="icon danger" data-del-student="${s.id}" title="Ta bort ${esc(s.name)}">×</button></td></tr>`;
@@ -466,16 +480,24 @@
     m.onclick = null;
     const draw = () => {
       const sel = (s[kind] || []).filter(id => k.students.some(x => x.id === id));
+      const isAlone = kind === 'wishes' && !!s.alone;
       const full = sel.length >= max;
       const desc = kind === 'wishes'
-        ? (max === 0 ? 'Önskemål är avstängda för klassen (max 0).' : `Välj upp till ${max}. Valda: ${sel.length} av ${max}.`)
+        ? (isAlone ? 'Eleven vill sitta själv – då väljer man inga kamrater.' : max === 0 ? 'Önskemål är avstängda för klassen (max 0).' : `Välj upp till ${max}. Valda: ${sel.length} av ${max}.`)
         : 'Lottningen undviker att placera dem bredvid varandra – åt båda hållen.';
+      const aloneBox = kind !== 'wishes' ? '' : `
+        <div class="alonebox ${isAlone ? 'on' : ''}">
+          <label class="check"><input type="checkbox" data-alone ${isAlone ? 'checked' : ''}> <span><b>Vill sitta själv</b> – ingen bänkkompis och ingen granne precis bredvid</span></label>
+          ${isAlone ? `<label class="check small"><input type="checkbox" data-alone-strict ${s.alone.strict ? 'checked' : ''}> <span><b>Strikt</b> – måste följas</span></label>
+          <p class="small muted">${s.alone.strict ? 'Eleven får alltid sitta själv, så länge det finns tillräckligt många tomma platser i klassrummet.' : 'Ett önskemål: appen försöker, men det kräver tomma platser.'}</p>` : ''}
+        </div>`;
       m.innerHTML = `<form method="dialog" class="modal">
         <h3>${kind === 'wishes' ? `Vem vill ${esc(s.name)} sitta med?` : `Vem ska ${esc(s.name)} inte sitta med?`}</h3>
+        ${aloneBox}
         <p class="muted small">${desc}</p>
-        <div class="pick">${k.students.filter(x => x.id !== sid).map(x => {
+        <div class="pick ${isAlone ? 'dimmed' : ''}">${k.students.filter(x => x.id !== sid).map(x => {
           const on = sel.includes(x.id);
-          const dis = !on && full;
+          const dis = (!on && full) || isAlone;
           return `<label class="pk ${on ? 'on' : ''} ${dis ? 'dis' : ''}"><input type="checkbox" value="${x.id}" ${on ? 'checked' : ''} ${dis ? 'disabled' : ''}> ${esc(x.name)}</label>`;
         }).join('')}</div>
         <div class="row end"><button class="btn primary">Klar</button></div></form>`;
@@ -484,6 +506,11 @@
     m.onchange = e => {
       const cb = e.target;
       if (cb.type !== 'checkbox') return;
+      if (cb.matches('[data-alone]')) {
+        if (cb.checked) { s.alone = { strict: false }; s.wishes = []; } else delete s.alone;
+        save(); draw(); return;
+      }
+      if (cb.matches('[data-alone-strict]')) { s.alone = { strict: cb.checked }; save(); draw(); return; }
       let sel = (s[kind] || []).slice();
       if (cb.checked) { if (sel.length < max) sel.push(cb.value); }
       else sel = sel.filter(i => i !== cb.value);
@@ -786,6 +813,7 @@
     st[4].pos = { cells: [6, 7, 8], strict: false };   // vill sitta längst bak
     st[9].pos = { cells: [0, 1, 2], strict: true };    // måste sitta längst fram
     st[15].pos = { cells: [6], strict: true };         // måste sitta längst bak till vänster
+    st[20].alone = { strict: false }; st[20].wishes = []; // vill sitta själv
     const k = { id: uid(), name: 'Exempelklass 7B', maxWishes: 3, students: st };
     S.rooms.push(r);
     S.classes.push(k);

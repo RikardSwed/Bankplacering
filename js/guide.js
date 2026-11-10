@@ -6,7 +6,7 @@ window.Guide = (() => {
   'use strict';
 
   // Bildernas mått, så att sidan inte hoppar när bilderna laddas
-  const SIZES = {"data":[2448,438],"gr-flaggor":[2380,782],"gr-grupper":[2388,774],"gr-historik":[2380,654],"gr-karta":[2380,1034],"gr-platser":[2448,402],"gr-resultat":[2448,746],"gr-schema":[2388,796],"gr-verktyg":[2388,188],"klasser-lagg-till":[1888,596],"klasser-lista":[1896,1258],"klasser-onskemal":[1128,1096],"klasser-plats-rad":[1872,124],"klasser-plats-strikt":[1128,1030],"klasser-plats":[1128,1030],"klassrum-grupprum":[1888,512],"klassrum-mall":[1888,308],"klassrum-rita":[1896,1444],"klassrum-zoner":[1896,1130],"lottning-karta":[2448,1224],"lottning-kontroller":[2448,606],"lottning-rapport":[2448,288],"lottning-spara":[2448,176],"sparade":[2448,478],"uppdateringar":[1128,1442]};
+  const SIZES = {"data":[2448,438],"gr-flaggor":[2380,782],"gr-grupper":[2388,774],"gr-historik":[2380,654],"gr-karta":[2380,1034],"gr-platser":[2448,402],"gr-resultat":[2448,746],"gr-schema":[2388,796],"gr-verktyg":[2388,188],"klasser-lagg-till":[1888,596],"klasser-lista":[1896,1258],"klasser-onskemal":[1128,1204],"klasser-plats-rad":[1872,124],"klasser-plats-strikt":[1128,1030],"klasser-plats":[1128,1030],"klasser-sitta-sjalv":[1128,1314],"klassrum-grupprum":[1888,512],"klassrum-mall":[1888,308],"klassrum-rita":[1896,1444],"klassrum-zoner":[1896,1130],"lottning-karta":[2448,1274],"lottning-kontroller":[2448,606],"lottning-rapport":[2448,554],"lottning-spara":[2448,176],"sparade":[2448,478],"uppdateringar":[1128,1538]};
   const fig = (file, caption) =>
     `<figure class="gfig ${(SIZES[file] || [9999])[0] < 1300 ? 'narrow' : ''}"><img src="img/guide/${file}.jpg" width="${(SIZES[file] || [0])[0]}" height="${(SIZES[file] || [0, 0])[1]}" alt="${caption.replace(/<[^>]+>/g, '').replace(/"/g, '&quot;')}" loading="lazy" data-zoom><figcaption>${caption}</figcaption></figure>`;
   const steps = items => `<ol class="gsteps">${items.map(i => `<li>${i}</li>`).join('')}</ol>`;
@@ -69,6 +69,15 @@ window.Guide = (() => {
         <h3 id="g-onskemal">Önskemål</h3>
         <p>Klicka i rutan <b>Önskar sitta med</b> på en elev. Bocka i de klasskamrater eleven vill sitta med. Hur många man får önska ställer du in med <b>Max antal önskemål per elev</b> (3 från början).</p>
         ${fig('klasser-onskemal', 'Rutan för önskemål. När maxantalet är nått går det inte att välja fler.')}
+        <h3 id="g-sjalv">Vill sitta själv</h3>
+        <p>Överst i samma ruta finns valet <b>Vill sitta själv</b>. Då får eleven varken någon bänkkompis eller någon granne precis bredvid sig – i praktiken en egen bänk, eller en kant där ingen sitter intill. Väljer du det tas eventuella kompisönskemål bort, eftersom de inte går ihop.</p>
+        <ul>
+          <li>Bocka i <b>Strikt</b> om det måste följas. Annars är det ett önskemål som appen försöker uppfylla.</li>
+          <li>I elevtabellen står det <i>Sitter själv</i> i önskemålskolumnen (och <i>strikt</i> om det är strikt).</li>
+          <li>Efter lottningen visar sammanställningen hur många som fick sitta själva, och på kartan får eleven ✓ om det lyckades.</li>
+        </ul>
+        ${fig('klasser-sitta-sjalv', 'Valet "Vill sitta själv" är ikryssat – då går det inte att välja kamrater.')}
+        ${tip('Att sitta själv kräver <b>tomma platser</b>. Har klassrummet 32 platser och klassen 26 elever finns 6 tomma platser. Varje elev som sitter själv behöver minst en tom plats bredvid sig – oftast den andra platsen i bänken. Är det fler som vill sitta själva än det finns tomma platser säger appen till efter lottningen. Är det fullt i rummet går det inte alls.', 'warn')}
         <h3>Ska inte sitta med</h3>
         <p>I kolumnen <b>Ska inte sitta med</b> väljer du elever som inte bör hamna bredvid varandra. Det gäller åt båda hållen, och lottningen undviker det mycket starkt.</p>
         ${tip('Lottningen försöker i första hand se till att så många som möjligt får sitta med minst en av dem de önskat. Fler önskemål per elev ger fler möjligheter att lyckas.')}`
@@ -269,6 +278,8 @@ window.Guide = (() => {
           <dd>Nej. Grupprumsdelen läser bara placeringen för att skapa grupper. Den ändrar den aldrig.</dd>
           <dt>Måste grupperna vara lika stora?</dt>
           <dd>Nej. En grupp kan vara 2, 3, 4 eller 6 elever. Rättvisan räknas per elev.</dd>
+          <dt>En elev som vill sitta själv fick ändå sällskap – varför?</dt>
+          <dd>Det finns för få tomma platser. Varje elev som sitter själv behöver en tom plats bredvid sig. Sammanställningen efter lottningen säger hur många tomma platser det finns. Gör önskemålet strikt för de elever där det är viktigast, så går de före.</dd>
           <dt>En elev med strikt platskrav hamnade fel – varför?</dt>
           <dd>Antingen finns det inte tillräckligt många platser i de valda rutorna (fler strikta krav än platser), eller så är eleven låst på en annan plats. Sammanställningen efter lottningen säger vilka det gäller. Kontrollera också med <i>Visa zoner</i> under Klassrum att rutorna ligger där du tänkt.</dd>
           <dt>Gäller platsönskemålen när jag lottar om platserna men behåller bänkkompisar?</dt>
