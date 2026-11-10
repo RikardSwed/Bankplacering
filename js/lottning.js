@@ -31,7 +31,40 @@ const Lottning = (() => {
     });
     const desks = room.desks.map((d, k) => [2 * k, 2 * k + 1]);
     const seatIndex = new Map(seats.map(s => [s.id, s.idx]));
-    return { seats, partner, neigh, desks, seatIndex };
+    // 3×3-zoner för platsönskemål
+    const rb = bands(seats.map(s => s.y)), cb = bands(seats.map(s => s.x));
+    seats.forEach(s => {
+      const rows = rb.get(s.y), cols = cb.get(s.x);
+      let mask = 0;
+      rows.forEach(r => cols.forEach(c => { mask |= 1 << (r * 3 + c); }));
+      s.zone = mask; s.zr = rows[0]; s.zc = cols[0];
+    });
+    const zone = seats.map(s => s.zone);
+    return { seats, partner, neigh, desks, seatIndex, zone };
+  }
+
+  // Delar in raderna (eller kolumnerna) i tre band: fram/mitten/bak eller
+  // vänster/mitten/höger. Rad 0 = närmast tavlan. Vänster/höger är sett från
+  // eleverna med ansiktet mot tavlan (så som klassrummet ritas i elevvyn).
+  function bands(values) {
+    const u = [...new Set(values)].sort((a, b) => a - b);
+    const n = u.length, map = new Map();
+    const k = Math.max(1, Math.round(n / 3));
+    u.forEach((v, i) => {
+      let z;
+      if (n === 1) z = [0, 1, 2];
+      else if (n === 2) z = i === 0 ? [0, 1] : [1, 2];
+      else z = [i < k ? 0 : i >= n - k ? 2 : 1];
+      map.set(v, z);
+    });
+    return map;
+  }
+
+  // Elevens platsönskemål som bitmask över de 9 rutorna (0 = inget önskemål).
+  function posMaskOf(s) {
+    let m = 0;
+    ((s.pos && s.pos.cells) || []).forEach(c => { if (c >= 0 && c < 9) m |= 1 << c; });
+    return m;
   }
 
   function prep(room, students, opts) {
@@ -40,8 +73,11 @@ const Lottning = (() => {
     const idx = new Map(students.map((s, i) => [s.id, i]));
     const W = new Uint8Array(n * n), A = new Uint8Array(n * n);
     const hasWish = new Uint8Array(n), g = new Uint8Array(n);
+    const usePos = opts.pos !== false;
+    const pm = new Uint16Array(n), ps = new Uint8Array(n);
     students.forEach((s, i) => {
       g[i] = s.gender === 'k' ? 1 : s.gender === 't' ? 2 : 0;
+      if (usePos) { pm[i] = posMaskOf(s); ps[i] = pm[i] && s.pos.strict ? 1 : 0; }
       (s.wishes || []).forEach(id => {
         const j = idx.get(id);
         if (j !== undefined && j !== i) { W[i * n + j] = 1; hasWish[i] = 1; }
@@ -52,7 +88,7 @@ const Lottning = (() => {
       });
     });
     return {
-      G, n, idx, W, A, hasWish, g,
+      G, n, idx, W, A, hasWish, g, pm, ps,
       useW: opts.wishes !== false,
       useA: opts.avoid !== false,
       rule: opts.gender || 'none'
@@ -62,7 +98,8 @@ const Lottning = (() => {
   // Poäng för en placering (högre = bättre).
   function score(P, arr) {
     const { G, n, W, A, hasWish, g, useW, useA, rule } = P;
-    const { partner, neigh } = G;
+    const posM = P.pm, posS = P.ps;
+    const { partner, neigh, zone } = G;
     let sc = 0;
     for (let p = 0; p < arr.length; p++) {
       const a = arr[p];
@@ -92,6 +129,7 @@ const Lottning = (() => {
       }
       if (useW && hasWish[a] && met > 0) sc += 100 + pm * 15 + (met - 1) * 4;
       if (!adj) sc -= 20; // sitter ensam – låt hellre tomma platser samlas i hela bänkar
+      if (posM[a] && !(zone[p] & posM[a])) sc -= posS[a] ? 3000 : 70; // platsönskemål
     }
     return sc;
   }
@@ -137,11 +175,18 @@ const Lottning = (() => {
       }
       const pool = [];
       for (let i = 0; i < n; i++) if (!lockedStud.has(i)) pool.push(i);
+      // Elever med strikt platskrav placeras först, i en tillåten ruta.
+      const order = pool.slice().sort((a, b) => P.ps[b] - P.ps[a]);
       makeInit = () => {
         const arr = new Array(m).fill(-1);
         for (let p = 0; p < m; p++) if (lockedSeat[p]) arr[p] = base[p];
         const seats = shuffle(free.slice());
-        pool.forEach((i, k) => { arr[seats[k]] = i; });
+        order.forEach(i => {
+          let k = P.ps[i] ? seats.findIndex(p => G.zone[p] & P.pm[i]) : 0;
+          if (k < 0) k = 0;
+          arr[seats[k]] = i;
+          seats.splice(k, 1);
+        });
         return arr;
       };
       move = arr => {
@@ -221,7 +266,7 @@ const Lottning = (() => {
     const byId = new Map(students.map(s => [s.id, s]));
     const at = G.seats.map(s => { const id = assignment[s.id]; return byId.has(id) ? id : null; });
     const info = {};
-    const sum = { withWish: 0, met: 0, unmet: [], avoid: [], same: 0, mixed: 0, unplaced: [] };
+    const sum = { withWish: 0, met: 0, unmet: [], avoid: [], same: 0, mixed: 0, unplaced: [], posWith: 0, posMet: 0, posFail: [], posStrictFail: [] };
     const placed = new Set(at.filter(Boolean));
     G.seats.forEach((seat, p) => {
       const id = at[p];
@@ -236,7 +281,15 @@ const Lottning = (() => {
       const avoidHit = opts.avoid !== false
         ? adj.filter(x => (s.avoid || []).includes(x) || (byId.get(x).avoid || []).includes(id))
         : [];
-      info[id] = { seatId: seat.id, partner, neigh, hasWish, metIds, avoidHit };
+      const pmask = opts.pos !== false ? posMaskOf(s) : 0;
+      const posOk = pmask ? !!(G.zone[p] & pmask) : null;
+      info[id] = { seatId: seat.id, partner, neigh, hasWish, metIds, avoidHit, posOk, posStrict: !!(pmask && s.pos.strict), zr: seat.zr, zc: seat.zc };
+      if (pmask) {
+        sum.posWith++;
+        if (posOk) sum.posMet++;
+        else if (s.pos.strict) sum.posStrictFail.push(id);
+        else sum.posFail.push(id);
+      }
       if (hasWish) { sum.withWish++; if (metIds.length) sum.met++; else sum.unmet.push(id); }
       avoidHit.forEach(x => { if (id < x) sum.avoid.push([id, x]); });
       if (partner && seat.side === 0) {
@@ -248,5 +301,5 @@ const Lottning = (() => {
     return { info, sum };
   }
 
-  return { geometry, run, analyze };
+  return { geometry, run, analyze, posMaskOf };
 })();

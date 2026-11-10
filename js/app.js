@@ -3,6 +3,46 @@
   'use strict';
 
   const KEY = 'bankplacering-v1';
+
+  // ---------- Version och uppdateringar ----------
+  // Höj APP_VERSION och version.json tillsammans vid varje ny version.
+  const APP_VERSION = '1.3.0';
+  const CHANGELOG = [
+    { v: '1.3.0', date: '2026-11-10', items: [
+      'Platsönskemål: välj var i klassrummet en elev vill sitta, i ett rutnät med 3 × 3 rutor (fram/mitten/bak och vänster/mitten/höger).',
+      'Varje platsönskemål kan vara <b>strikt</b> (måste följas) eller ett vanligt önskemål som appen försöker uppfylla.',
+      'Knappen <i>Visa zoner</i> under Klassrum visar hur rutnätet läggs ut i just det klassrummet.',
+      'Ny meny <i>Uppdateringar</i> (klicka på versionsnumret uppe till höger) som visar vilken version som körs och vad som är nytt. Appen säger till om en nyare version finns.'
+    ] },
+    { v: '1.2.0', date: '2026-11-05', items: ['Ny flik <i>Guider</i> med steg-för-steg-guider och skärmbilder.'] },
+    { v: '1.1.0', date: '2026-11-05', items: [
+      'Ny flik <i>Grupprum</i>: grupper, lediga rum, rumslottning och cirkulationsschema.',
+      'Grupprum kopplas till klassrum under fliken Klassrum.',
+      'Tavelvy (lärarvy/elevvy) även när man ritar klassrum.'
+    ] },
+    { v: '1.0.0', date: '2026-11-05', items: ['Första versionen: klassrum, klasser med önskemål och kön, bänklottning och sparade placeringar.'] }
+  ];
+
+  // ---------- Platsönskemål (3 × 3) ----------
+  const POS_ROWS = ['Fram', 'Mitten', 'Bak'];
+  const POS_COLS = ['vänster', 'mitten', 'höger'];
+  const posLabel = i => (i === 4 ? 'Mitten' : `${POS_ROWS[Math.floor(i / 3)]} ${POS_COLS[i % 3]}`);
+  const posCells = s => (s && s.pos && s.pos.cells) || [];
+  function miniGrid(s) {
+    const cells = posCells(s);
+    return `<span class="mini" aria-hidden="true">${[...Array(9).keys()].map(i => `<i class="${cells.includes(i) ? 'on' : ''}"></i>`).join('')}</span>`;
+  }
+  function posText(s) {
+    const cells = posCells(s);
+    if (!cells.length) return '';
+    const rows = [0, 1, 2].filter(r => [0, 1, 2].every(c => cells.includes(r * 3 + c)));
+    const cols = [0, 1, 2].filter(c => [0, 1, 2].every(r => cells.includes(r * 3 + c)));
+    let t;
+    if (cells.length === 3 && rows.length === 1) t = ['Längst fram', 'Mittenraderna', 'Längst bak'][rows[0]];
+    else if (cells.length === 3 && cols.length === 1) t = ['Vänster sida', 'I mitten', 'Höger sida'][cols[0]];
+    else t = cells.map(posLabel).join(', ');
+    return t + (s.pos.strict ? ' (strikt)' : '');
+  }
   const $ = (s, r = document) => r.querySelector(s);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -110,6 +150,7 @@
   function roomGrid(r, opt) {
     const flip = ui.flipped;
     const J = joins(r);
+    const zones = opt.edit && ui.zones && r.desks.length ? new Map(Lottning.geometry(r).seats.map(s => [s.id, s])) : null;
     let h = `<div class="grid ${opt.edit ? 'edit' : ''}" style="--cols:${r.cols};--rows:${r.rows}">`;
     if (opt.edit) {
       for (let y = 0; y < r.rows; y++) for (let x = 0; x < r.cols; x++) {
@@ -124,7 +165,11 @@
       let { a, b } = J[d.id];
       if (flip) [a, b] = [b, a];
       const cls = ['desk', v ? 'v' : 'h', a ? (v ? 'jt' : 'jl') : '', b ? (v ? 'jb' : 'jr') : '', ui.moving === d.id ? 'moving' : ''].join(' ');
-      const seats = [0, 1].map(i => (opt.edit ? '<div class="seat ghost"></div>' : opt.seatHTML(d.id + ':' + i)));
+      const seats = [0, 1].map(i => {
+        if (!opt.edit) return opt.seatHTML(d.id + ':' + i);
+        const z = zones && zones.get(d.id + ':' + i);
+        return z ? `<div class="seat ghost zone z${z.zr}${z.zc}"><span class="zl">${z.zr === 1 && z.zc === 1 ? 'Mitten' : `${POS_ROWS[z.zr]}<br>${POS_COLS[z.zc]}`}</span></div>` : '<div class="seat ghost"></div>';
+      });
       if (flip) seats.reverse();
       h += `<div class="${cls}" data-desk="${d.id}" style="grid-column:${x + 1}/span ${v ? 1 : 2};grid-row:${y + 1}/span ${v ? 2 : 1}">${seats.join('')}</div>`;
     });
@@ -149,7 +194,7 @@
     const c = S.current;
     if (!klass(c.classId)) { c.classId = S.classes[0]?.id || null; c.assignment = {}; c.locks = []; c.absent = []; }
     if (!room(c.roomId)) { c.roomId = S.rooms[0]?.id || null; c.assignment = {}; c.locks = []; }
-    c.opts = Object.assign({ wishes: true, avoid: true, gender: 'none' }, c.opts || {});
+    c.opts = Object.assign({ wishes: true, avoid: true, pos: true, gender: 'none' }, c.opts || {});
     c.assignment = c.assignment || {};
     c.locks = c.locks || [];
     c.absent = c.absent || [];
@@ -181,11 +226,14 @@
     let mark = '';
     if (inf.avoidHit && inf.avoidHit.length) mark = '<span class="mk bad">!</span>';
     else if (inf.hasWish) mark = inf.metIds.length ? '<span class="mk ok">✓</span>' : '<span class="mk no">–</span>';
+    if (inf.posOk === true) mark += '<span class="pm ok"></span>';
+    else if (inf.posOk === false) mark += `<span class="pm ${inf.posStrict ? 'bad' : 'no'}"></span>`;
     const tip = [st.name];
     if ((st.wishes || []).length) tip.push('Önskar: ' + st.wishes.map(nm).join(', '));
     if (inf.partner) tip.push('Bänkkompis: ' + nm(inf.partner));
     if (inf.neigh && inf.neigh.length) tip.push('Granne: ' + inf.neigh.map(nm).join(', '));
     if (inf.avoidHit && inf.avoidHit.length) tip.push('Ska inte sitta med: ' + inf.avoidHit.map(nm).join(', '));
+    if (inf.posOk !== null && inf.posOk !== undefined) tip.push(`Plats: ${posText(st)} – ${inf.posOk ? 'uppfyllt' : 'inte uppfyllt'}`);
     if (locked) tip.push('Låst plats');
     return `<div class="seat filled g-${st.gender || 'x'} ${sel ? 'sel' : ''} ${locked ? 'locked' : ''}" data-seat="${seatId}" title="${esc(tip.join('\n'))}">` +
       `<span class="nm">${esc(st.name)}</span>${mark}` +
@@ -233,10 +281,13 @@
           : '<div class="stat"><b>–</b><span>inga önskemål ifyllda</span></div>';
       }
       if (c.opts.avoid) rep += `<div class="stat ${sm.avoid.length ? 'bad' : 'good'}"><b>${sm.avoid.length}</b><span>${sm.avoid.length === 1 ? 'krock' : 'krockar'} med "ska inte sitta med"</span></div>`;
+      if (c.opts.pos && sm.posWith) rep += `<div class="stat ${sm.posStrictFail.length ? 'bad' : sm.posMet === sm.posWith ? 'good' : ''}"><b>${sm.posMet} / ${sm.posWith}</b><span>sitter där de önskat i rummet</span></div>`;
       if (sm.same + sm.mixed) rep += `<div class="stat"><b>${sm.same} / ${sm.mixed}</b><span>bänkpar samma kön / blandade</span></div>`;
       rep += `<div class="stat"><b>${present.length - sm.unplaced.length} / ${seats}</b><span>platser används</span></div>`;
       rep += '</div>';
       if (c.opts.wishes && sm.unmet.length) rep += `<p class="small"><b>Önskemål ej uppfyllt:</b> ${sm.unmet.map(id => esc(nm(id))).join(', ')}</p>`;
+      if (c.opts.pos && sm.posStrictFail.length) rep += `<p class="small bad-text"><b>Strikt platskrav gick inte att uppfylla:</b> ${sm.posStrictFail.map(id => esc(nm(id) + ' (' + posText(all.get(id)) + ')')).join(', ')} – finns det tillräckligt många platser i de valda rutorna?</p>`;
+      if (c.opts.pos && sm.posFail.length) rep += `<p class="small"><b>Platsönskemål ej uppfyllt:</b> ${sm.posFail.map(id => esc(nm(id))).join(', ')}</p>`;
       if (sm.avoid.length) rep += `<p class="small bad-text"><b>Sitter bredvid någon de inte ska:</b> ${sm.avoid.map(([a, b]) => esc(nm(a) + ' & ' + nm(b))).join(', ')}</p>`;
       if (sm.unplaced.length) {
         rep += `<div class="unplaced"><b class="small">Saknar plats:</b> <span class="chips">${sm.unplaced.map(id =>
@@ -260,6 +311,7 @@
           <div class="checks">
             <label class="check"><input type="checkbox" data-field="wishes" ${c.opts.wishes ? 'checked' : ''}> Ta hänsyn till önskemål</label>
             <label class="check"><input type="checkbox" data-field="avoid" ${c.opts.avoid ? 'checked' : ''}> Undvik "ska inte sitta med"</label>
+            <label class="check"><input type="checkbox" data-field="pos" ${c.opts.pos ? 'checked' : ''}> Ta hänsyn till platsönskemål</label>
           </div>
         </div>
         <details class="absent" ${ui.absOpen ? 'open' : ''}>
@@ -285,6 +337,8 @@
           <span><b class="mk ok">✓</b> sitter med någon hen önskat</span>
           <span><b class="mk no">–</b> önskemål ej uppfyllt</span>
           <span><b class="mk bad">!</b> bredvid någon hen inte ska sitta med</span>
+          <span><i class="pm ok"></i> plats enligt önskemål</span>
+          <span><i class="pm no"></i> platsönskemål ej uppfyllt</span>
           <span>${LOCK} låst plats</span>
         </div>
         <p class="hint no-print center">Klicka på två platser för att byta. Klicka på hänglåset för att låsa en elev på sin plats inför nästa lottning.</p>
@@ -365,6 +419,7 @@
     const nameOf = id => sById.get(id)?.name;
     const boys = k.students.filter(s => s.gender === 'k').length, girls = k.students.filter(s => s.gender === 't').length;
     const withW = k.students.filter(s => (s.wishes || []).length).length;
+    const withP = k.students.filter(s => posCells(s).length).length;
     const max = k.maxWishes ?? 3;
     const rows = k.students.map(s => {
       const wch = (s.wishes || []).filter(nameOf).map(id => {
@@ -378,6 +433,7 @@
           `<button class="${(s.gender || '') === g ? 'on' : ''} ${g ? 'g-' + g : ''}" data-gender="${g}" data-sid="${s.id}">${l}</button>`).join('')}</div></td>
         <td><button class="chipbox" data-edit-wishes="${s.id}">${wch || '<span class="add">+ Önska</span>'}</button></td>
         <td><button class="chipbox" data-edit-avoid="${s.id}">${ach || '<span class="add">+ Lägg till</span>'}</button></td>
+        <td><button class="chipbox posbox" data-edit-pos="${s.id}" title="${esc(posText(s) || 'Inget platsönskemål')}">${posCells(s).length ? `${miniGrid(s)}${s.pos.strict ? '<span class="tag strict">strikt</span>' : ''}` : '<span class="add">+ Plats</span>'}</button></td>
         <td><button class="icon danger" data-del-student="${s.id}" title="Ta bort ${esc(s.name)}">×</button></td></tr>`;
     }).join('');
 
@@ -388,7 +444,7 @@
       </div>
       <div class="row wrap gap">
         <label class="field">Max antal önskemål per elev <input type="number" min="0" max="10" value="${max}" data-max-wishes></label>
-        <span class="muted small">${k.students.length} elever · ${boys} killar · ${girls} tjejer · ${withW} har önskemål</span>
+        <span class="muted small">${k.students.length} elever · ${boys} killar · ${girls} tjejer · ${withW} har önskemål · ${withP} har platsönskemål</span>
       </div>
       <details class="add-box" ${k.students.length ? '' : 'open'}>
         <summary>Lägg till elever</summary>
@@ -396,8 +452,8 @@
         <p class="muted small">Ett namn per rad. Skriv <code>, k</code> för kille eller <code>, t</code> för tjej efter namnet om du vill ange det direkt. Du kan klistra in en lista från t.ex. Excel.</p>
         <button class="btn primary" data-action="bulk-add">Lägg till</button>
       </details>
-      ${k.students.length ? `<div class="table-wrap"><table class="list-table students"><thead><tr><th>Namn</th><th>Kön</th><th>Önskar sitta med</th><th>Ska inte sitta med</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-      <p class="muted small">Klicka i rutorna för att välja önskemål. ♥ betyder att två elever önskat varandra.</p>` : ''}
+      ${k.students.length ? `<div class="table-wrap"><table class="list-table students"><thead><tr><th>Namn</th><th>Kön</th><th>Önskar sitta med</th><th>Ska inte sitta med</th><th>Plats i rummet</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="muted small">Klicka i rutorna för att välja önskemål. ♥ betyder att två elever har önskat varandra. Under <i>Plats i rummet</i> väljer du var i klassrummet eleven vill eller måste sitta.</p>` : ''}
     </section></div>`;
   }
 
@@ -407,6 +463,7 @@
     if (!s) return;
     const max = kind === 'wishes' ? (k.maxWishes ?? 3) : Infinity;
     const m = $('#modal');
+    m.onclick = null;
     const draw = () => {
       const sel = (s[kind] || []).filter(id => k.students.some(x => x.id === id));
       const full = sel.length >= max;
@@ -436,6 +493,91 @@
     };
     m.onclose = () => render();
     m.showModal();
+  }
+
+  function openPosPicker(sid) {
+    const k = klass(ui.classId);
+    const s = k.students.find(x => x.id === sid);
+    if (!s) return;
+    const m = $('#modal');
+    const setCells = cells => {
+      if (!cells.length) { delete s.pos; return; }
+      s.pos = { cells: [...cells].sort((a, b) => a - b), strict: !!(s.pos && s.pos.strict) };
+    };
+    const draw = () => {
+      const cells = posCells(s), strict = !!(s.pos && s.pos.strict);
+      m.innerHTML = `<form method="dialog" class="modal">
+        <h3>Var i klassrummet ska ${esc(s.name)} sitta?</h3>
+        <p class="muted small">Klicka i en eller flera rutor. Klicka på en rubrik för att välja en hel rad eller sida. Vänster och höger räknas som eleverna ser det, med ansiktet mot tavlan.</p>
+        <div class="posgrid">
+          <span></span><div class="board pboard">Tavla</div>
+          <span></span>${POS_COLS.map((c, i) => `<button type="button" class="phead" data-pcol="${i}">${c[0].toUpperCase() + c.slice(1)}</button>`).join('')}
+          ${[0, 1, 2].map(r => `<button type="button" class="phead row" data-prow="${r}">${POS_ROWS[r]}</button>` +
+            [0, 1, 2].map(c => { const i = r * 3 + c; return `<button type="button" class="posc ${cells.includes(i) ? 'on' : ''} ${strict ? 'strict' : ''}" data-pcell="${i}">${posLabel(i)}</button>`; }).join('')).join('')}
+        </div>
+        <label class="check strictbox"><input type="checkbox" data-pstrict ${strict ? 'checked' : ''}> <span><b>Strikt</b> – måste följas</span></label>
+        <p class="small ${strict ? 'bad-text' : 'muted'}">${strict
+          ? 'Eleven placeras alltid i någon av de valda rutorna, så länge det finns plats där. Strikta krav går före alla andra önskemål.'
+          : 'Ett önskemål: appen försöker uppfylla det, men det kan vika för t.ex. "ska inte sitta med" eller andra elevers strikta krav.'}</p>
+        <div class="row between"><button type="button" class="btn ghost" data-pclear ${cells.length ? '' : 'disabled'}>Ta bort platsönskemålet</button><button class="btn primary">Klar</button></div>
+      </form>`;
+    };
+    m.onclick = e => {
+      const t = e.target;
+      const c = t.closest('[data-pcell]'), r = t.closest('[data-prow]'), co = t.closest('[data-pcol]'), cl = t.closest('[data-pclear]');
+      if (!(c || r || co || cl)) return;
+      const cells = new Set(posCells(s));
+      const toggleAll = list => { const full = list.every(i => cells.has(i)); list.forEach(i => (full ? cells.delete(i) : cells.add(i))); };
+      if (c) { const i = +c.dataset.pcell; if (cells.has(i)) cells.delete(i); else cells.add(i); }
+      if (r) toggleAll([0, 1, 2].map(j => +r.dataset.prow * 3 + j));
+      if (co) toggleAll([0, 1, 2].map(j => j * 3 + +co.dataset.pcol));
+      if (cl) cells.clear();
+      setCells([...cells]);
+      save(); draw();
+    };
+    m.onchange = e => {
+      if (!e.target.matches('[data-pstrict]')) return;
+      s.pos = { cells: posCells(s), strict: e.target.checked };
+      save(); draw();
+    };
+    m.onclose = () => { m.onclick = null; render(); };
+    draw();
+    m.showModal();
+  }
+
+  function openChangelog() {
+    const m = $('#modal');
+    m.onchange = null; m.onclick = null; m.onclose = null;
+    m.innerHTML = `<form method="dialog" class="modal changelog">
+      <h3>Uppdateringar</h3>
+      <p class="small">Du kör version <b>${APP_VERSION}</b>.${latestVersion
+        ? latestVersion === APP_VERSION ? ' <span class="good-text">✓ Det är den senaste versionen.</span>' : ` <span class="bad-text">En nyare version (${esc(latestVersion)}) finns – ladda om sidan.</span>`
+        : ' <span class="muted">(Kunde inte kontrollera om det finns en nyare version just nu.)</span>'}</p>
+      ${CHANGELOG.map(c => `<div class="cl-item ${c.v === APP_VERSION ? 'current' : ''}"><div class="cl-head"><b>v${c.v}</b><span class="muted small">${c.date}</span>${c.v === APP_VERSION ? '<span class="tag">igång nu</span>' : ''}</div><ul>${c.items.map(i => `<li>${i}</li>`).join('')}</ul></div>`).join('')}
+      <div class="row between"><button type="button" class="btn ghost" data-reload>Ladda om sidan</button><button class="btn primary">Stäng</button></div>
+    </form>`;
+    m.onclick = e => { if (e.target.closest('[data-reload]')) location.reload(); };
+    m.showModal();
+  }
+
+  // Kollar om det finns en nyare version publicerad (version.json hämtas förbi cachen).
+  let latestVersion = null;
+  function checkVersion() {
+    if (location.protocol === 'file:') return;
+    fetch('version.json?t=' + Date.now(), { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (!d || !d.version) return;
+        latestVersion = d.version;
+        const bar = $('#updbar');
+        if (latestVersion !== APP_VERSION && bar) {
+          bar.innerHTML = `En nyare version (${esc(latestVersion)}) finns. Du kör ${APP_VERSION}. <button class="btn" data-reload-bar>Ladda om</button>`;
+          bar.hidden = false;
+        }
+        const vb = $('#verbtn');
+        if (vb) vb.classList.toggle('stale', latestVersion !== APP_VERSION);
+      })
+      .catch(() => {});
   }
 
   function parseBulk(text) {
@@ -481,9 +623,11 @@
         <div class="seg tools">${tools.map(([t, l]) => `<button class="${ui.tool === t ? 'on' : ''}" data-tool="${t}">${l}</button>`).join('')}</div>
         <button class="btn ghost" data-action="clear-desks" ${r.desks.length ? '' : 'disabled'}>Rensa alla bänkar</button>
         <span class="spacer"></span>
+        <button class="btn ${ui.zones ? 'primary' : 'ghost'}" data-action="zones" title="Visa hur platsönskemålens 3 × 3 rutor läggs ut i det här klassrummet">${ui.zones ? 'Dölj zoner' : 'Visa zoner'}</button>
         <button class="btn ghost" data-action="flip">${ui.flipped ? 'Elevvy (tavlan uppe)' : 'Lärarvy (tavlan nere)'}</button>
       </div>
       <p class="hint">${hints[ui.tool] || ''}</p>
+      ${ui.zones ? '<p class="hint">Zonerna visar hur platsönskemålen (fram/mitten/bak, vänster/mitten/höger) översätts till platser i just det här klassrummet. Vänster och höger räknas från eleverna, med ansiktet mot tavlan.</p>' : ''}
       ${roomGrid(r, { edit: true })}
       <div class="add-box gr-config">
         <div class="row between"><b>Grupprum till ${esc(r.name)}</b><button class="btn" data-action="add-gr">+ Lägg till grupprum</button></div>
@@ -639,10 +783,13 @@
     });
     st[1].avoid.push(st[3].id);
     st[0].avoid.push(st[6].id);
+    st[4].pos = { cells: [6, 7, 8], strict: false };   // vill sitta längst bak
+    st[9].pos = { cells: [0, 1, 2], strict: true };    // måste sitta längst fram
+    st[15].pos = { cells: [6], strict: true };         // måste sitta längst bak till vänster
     const k = { id: uid(), name: 'Exempelklass 7B', maxWishes: 3, students: st };
     S.rooms.push(r);
     S.classes.push(k);
-    S.current = { classId: k.id, roomId: r.id, assignment: {}, locks: [], absent: [], opts: { wishes: true, avoid: true, gender: 'same' } };
+    S.current = { classId: k.id, roomId: r.id, assignment: {}, locks: [], absent: [], opts: { wishes: true, avoid: true, pos: true, gender: 'same' } };
     ui.roomId = r.id; ui.classId = k.id; ui.tab = 'lottning';
     save(); render();
     toast('Exempeldata inlagd – tryck på Lotta!');
@@ -654,6 +801,7 @@
     'lotta-desks': () => lotta('desks'),
     'clear-locks': () => { S.current.locks = []; save(); render(); },
     'flip': () => { ui.flipped = !ui.flipped; render(); },
+    'zones': () => { ui.zones = !ui.zones; render(); },
     'print': () => window.print(),
     'save-result': () => {
       const c = ensureCurrent(), k = klass(c.classId), r = room(c.roomId);
@@ -797,6 +945,8 @@
     }
     const ew = t.closest('[data-edit-wishes]');
     if (ew) { openPicker(ew.dataset.editWishes, 'wishes'); return; }
+    const ep = t.closest('[data-edit-pos]');
+    if (ep) { openPosPicker(ep.dataset.editPos); return; }
     const ea = t.closest('[data-edit-avoid]');
     if (ea) { openPicker(ea.dataset.editAvoid, 'avoid'); return; }
     const ds = t.closest('[data-del-student]');
@@ -910,7 +1060,7 @@
 
   // Delas med grupprum.js
   window.BP = {
-    get S() { return S; }, ui, save, render, toast, esc, uid, clamp, room, klass, roomGrid, fmtDate, ensureCurrent
+    get S() { return S; }, APP_VERSION, ui, save, render, toast, esc, uid, clamp, room, klass, roomGrid, fmtDate, ensureCurrent
   };
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -921,6 +1071,10 @@
       const b = e.target.closest('[data-tab]');
       if (b) { ui.tab = b.dataset.tab; ui.sel = null; ui.moving = null; render(); window.scrollTo(0, 0); }
     });
+    const vb = $('#verbtn');
+    if (vb) { vb.textContent = 'v' + APP_VERSION; vb.addEventListener('click', openChangelog); }
+    document.addEventListener('click', e => { if (e.target.closest('[data-reload-bar]')) location.reload(); });
+    checkVersion();
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape' && (ui.sel || ui.moving)) { ui.sel = null; ui.moving = null; render(); }
     });

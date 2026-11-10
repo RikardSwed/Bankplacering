@@ -6,9 +6,9 @@ window.Guide = (() => {
   'use strict';
 
   // Bildernas mått, så att sidan inte hoppar när bilderna laddas
-  const SIZES = {"data":[2448,438],"gr-flaggor":[2380,782],"gr-grupper":[2388,708],"gr-historik":[2380,654],"gr-karta":[2380,1034],"gr-platser":[2448,402],"gr-resultat":[2448,794],"gr-schema":[2388,796],"gr-verktyg":[2388,188],"klasser-lagg-till":[1888,596],"klasser-lista":[1896,1172],"klasser-onskemal":[1128,1096],"klassrum-grupprum":[1888,512],"klassrum-mall":[1888,308],"klassrum-rita":[1896,1444],"lottning-karta":[2448,1224],"lottning-kontroller":[2448,570],"lottning-rapport":[2448,288],"lottning-spara":[2448,176],"sparade":[2448,478]};
+  const SIZES = {"data":[2448,438],"gr-flaggor":[2380,782],"gr-grupper":[2388,774],"gr-historik":[2380,654],"gr-karta":[2380,1034],"gr-platser":[2448,402],"gr-resultat":[2448,746],"gr-schema":[2388,796],"gr-verktyg":[2388,188],"klasser-lagg-till":[1888,596],"klasser-lista":[1896,1258],"klasser-onskemal":[1128,1096],"klasser-plats-rad":[1872,124],"klasser-plats-strikt":[1128,1030],"klasser-plats":[1128,1030],"klassrum-grupprum":[1888,512],"klassrum-mall":[1888,308],"klassrum-rita":[1896,1444],"klassrum-zoner":[1896,1130],"lottning-karta":[2448,1224],"lottning-kontroller":[2448,606],"lottning-rapport":[2448,288],"lottning-spara":[2448,176],"sparade":[2448,478],"uppdateringar":[1128,1442]};
   const fig = (file, caption) =>
-    `<figure class="gfig"><img src="img/guide/${file}.jpg" width="${(SIZES[file] || [0])[0]}" height="${(SIZES[file] || [0, 0])[1]}" alt="${caption.replace(/<[^>]+>/g, '').replace(/"/g, '&quot;')}" loading="lazy" data-zoom><figcaption>${caption}</figcaption></figure>`;
+    `<figure class="gfig ${(SIZES[file] || [9999])[0] < 1300 ? 'narrow' : ''}"><img src="img/guide/${file}.jpg" width="${(SIZES[file] || [0])[0]}" height="${(SIZES[file] || [0, 0])[1]}" alt="${caption.replace(/<[^>]+>/g, '').replace(/"/g, '&quot;')}" loading="lazy" data-zoom><figcaption>${caption}</figcaption></figure>`;
   const steps = items => `<ol class="gsteps">${items.map(i => `<li>${i}</li>`).join('')}</ol>`;
   const tip = (t, kind = 'tip') => `<div class="gbox ${kind}"><b>${kind === 'ex' ? 'Exempel' : kind === 'warn' ? 'Bra att veta' : 'Tips'}</b>${t}</div>`;
   const top = '<button class="gtop" data-gjump="guide-top">↑ Till innehållet</button>';
@@ -74,12 +74,40 @@ window.Guide = (() => {
         ${tip('Lottningen försöker i första hand se till att så många som möjligt får sitta med minst en av dem de önskat. Fler önskemål per elev ger fler möjligheter att lyckas.')}`
     },
     {
+      id: 'g-plats', icon: '📍', title: 'Platsönskemål – var i rummet', lead: 'Fram, mitten eller bak – till vänster, i mitten eller till höger. Strikt eller önskemål.',
+      body: () => `
+        <p>Utöver vem eleven vill sitta med kan du ange <b>var i klassrummet</b> eleven vill – eller måste – sitta. Du väljer bland nio ungefärliga positioner: tre rader (fram, mitten, bak) gånger tre delar (vänster, mitten, höger).</p>
+        ${steps([
+          'Gå till <b>Klasser</b> och klicka i kolumnen <b>Plats i rummet</b> på eleven.',
+          'Klicka i en eller flera rutor. Klicka på en <b>rubrik</b> – t.ex. <i>Bak</i> eller <i>Vänster</i> – för att välja en hel rad eller sida på en gång.',
+          'Bocka i <b>Strikt</b> om det måste följas. Annars är det ett önskemål som appen försöker uppfylla.',
+          'Tryck på <b>Klar</b>. I tabellen visas en liten karta över de valda rutorna, och en röd etikett om det är strikt.'
+        ])}
+        ${fig('klasser-plats', 'Ett vanligt önskemål: eleven vill sitta längst bak, och alla tre bakre rutor är valda (genom ett klick på rubriken "Bak").')}
+        ${fig('klasser-plats-strikt', 'Ett strikt krav: eleven måste sitta längst bak till vänster. Strikta val visas i rött.')}
+        ${fig('klasser-plats-rad', 'Så syns det i elevtabellen: den lilla kartan visar vald ruta, och etiketten visar att det är strikt.')}
+        <h3>Vänster och höger</h3>
+        <p>Vänster och höger räknas <b>som eleverna ser det</b>, när de sitter med ansiktet mot tavlan – precis som klassrummet ritas i elevvyn (tavlan uppe). Byter du till lärarvyn spegelvänds ritningen, men önskemålen följer med rätt.</p>
+        <h3>Strikt eller önskemål?</h3>
+        <ul>
+          <li><b>Önskemål</b> – appen försöker, och lyckas oftast, men ett önskemål kan vika om det krockar med annat: att någon inte ska sitta med någon, att kompisönskemål går ihop, eller andra elevers strikta krav.</li>
+          <li><b>Strikt</b> – eleven placeras alltid i någon av de valda rutorna, så länge det finns lediga platser där. Strikta krav går före allt annat.</li>
+        </ul>
+        ${tip('En elev vill sitta långt bak: välj alla tre bakre rutor och låt det vara ett önskemål. En annan elev måste sitta längst bak till vänster, t.ex. för att se tavlan eller kunna gå ut: välj bara <i>Bak vänster</i> och bocka i <b>Strikt</b>.', 'ex')}
+        <h3>Så översätts rutorna till ditt klassrum</h3>
+        <p>De nio rutorna är ungefärliga. Appen delar in bänkraderna i ett främre, ett mittersta och ett bakre band, och platserna från vänster till höger i tre delar. Vill du se exakt hur det blir i en viss sal: gå till <b>Klassrum</b> och tryck på <b>Visa zoner</b>.</p>
+        ${fig('klassrum-zoner', 'Zonerna i exempelsalen. Med fyra bänkrader blir första raden "fram", de två mittersta "mitten" och sista raden "bak".')}
+        ${tip('Strikta krav behöver plats. Har tre elever ett strikt krav på <i>Bak vänster</i> men där bara finns tre platser, får de plats – men har fem elever samma krav går det inte. Då står det i rött under lottningen vilka som inte kunde placeras enligt kravet. Välj fler rutor eller gör några till vanliga önskemål.', 'warn')}
+        <h3>Vid lottningen</h3>
+        <p>På fliken Lottning finns rutan <b>Ta hänsyn till platsönskemål</b> (på från början). Efter lottningen visar sammanställningen hur många som sitter där de önskat, och på kartan har varje elev med platsönskemål en liten prick uppe till vänster: <b style="color:#2f8f4e">grön</b> = uppfyllt, <b style="color:#a39e95">grå</b> = inte uppfyllt, <b style="color:#c4402f">röd</b> = strikt krav som inte gick att uppfylla.</p>`
+    },
+    {
       id: 'g-lottning', icon: '🎲', title: 'Lotta bänkplacering', lead: 'Lotta, läs resultatet, byt för hand och lås platser.',
       body: () => `
         ${steps([
           'Gå till <b>Lottning</b> och välj <b>Klass</b> och <b>Klassrum</b>.',
           'Välj regel för <b>Kön</b>: ingen hänsyn, killar med killar och tjejer med tjejer, eller blandat. Regeln följs om det går, men önskemål väger tyngre.',
-          'Bocka i om lottningen ska ta hänsyn till <b>önskemål</b> och <b>"ska inte sitta med"</b>.',
+          'Bocka i om lottningen ska ta hänsyn till <b>önskemål</b>, <b>"ska inte sitta med"</b> och <b>platsönskemål</b>.',
           'Är någon borta? Öppna <b>Frånvarande idag</b> och klicka på deras namn – de lottas inte in.',
           'Tryck på <b>🎲 Lotta ny placering</b>.'
         ])}
@@ -216,6 +244,18 @@ window.Guide = (() => {
         ${tip('Rensar du webbläsarens historik och webbplatsdata kan det som sparats i appen försvinna. En säkerhetskopia skyddar mot det.', 'warn')}`
     },
     {
+      id: 'g-version', icon: '🔄', title: 'Uppdateringar och version', lead: 'Se vilken version du kör, vad som är nytt och om den senaste är inladdad.',
+      body: () => `
+        <p>Uppe till höger i menyraden står versionsnumret som körs just nu, t.ex. <b>v${window.BP ? window.BP.APP_VERSION : ''}</b>. Klicka på det för att öppna <b>Uppdateringar</b>.</p>
+        ${fig('uppdateringar', 'Uppdateringar: versionen som är igång är markerad, och under varje version står vad som är nytt.')}
+        <ul>
+          <li>Högst upp står om du kör den <b>senaste versionen</b>. Appen frågar webbplatsen när sidan laddas.</li>
+          <li>Finns det en nyare version visas en <b>gul rad</b> överst på sidan och versionsnumret blir gult. Tryck på <b>Ladda om</b>.</li>
+          <li>Under varje version står vad som ändrats, nyast först.</li>
+        </ul>
+        ${tip('Har du just laddat upp en ny version på GitHub kan det ta någon minut innan GitHub Pages visar den. Ladda om sidan efter en stund – när versionsnumret uppe till höger stämmer är den nya versionen igång.', 'warn')}`
+    },
+    {
       id: 'g-faq', icon: '💡', title: 'Vanliga frågor', lead: 'Korta svar på sådant som brukar dyka upp.',
       body: () => `
         <dl class="gfaq">
@@ -229,6 +269,12 @@ window.Guide = (() => {
           <dd>Nej. Grupprumsdelen läser bara placeringen för att skapa grupper. Den ändrar den aldrig.</dd>
           <dt>Måste grupperna vara lika stora?</dt>
           <dd>Nej. En grupp kan vara 2, 3, 4 eller 6 elever. Rättvisan räknas per elev.</dd>
+          <dt>En elev med strikt platskrav hamnade fel – varför?</dt>
+          <dd>Antingen finns det inte tillräckligt många platser i de valda rutorna (fler strikta krav än platser), eller så är eleven låst på en annan plats. Sammanställningen efter lottningen säger vilka det gäller. Kontrollera också med <i>Visa zoner</i> under Klassrum att rutorna ligger där du tänkt.</dd>
+          <dt>Gäller platsönskemålen när jag lottar om platserna men behåller bänkkompisar?</dt>
+          <dd>Ja, så långt det går. Men eftersom paren hålls ihop flyttas båda eleverna tillsammans, så det kan vara svårare att uppfylla allt. Lotta en ny placering om ett strikt krav inte går att uppfylla.</dd>
+          <dt>Hur vet jag att den senaste versionen är igång?</dt>
+          <dd>Klicka på versionsnumret uppe till höger. Där står om du kör den senaste versionen.</dd>
           <dt>Vad händer om jag tar bort ett grupprum från klassrummet?</dt>
           <dd>Historiken finns kvar i schemat, men rummet går inte att lotta till längre.</dd>
           <dt>Jag sparade ett grupprumstillfälle av misstag.</dt>
