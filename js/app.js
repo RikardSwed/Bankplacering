@@ -138,7 +138,8 @@
     document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === ui.tab));
     const v = $('#view');
     const grupprum = el => (window.Grupprum ? window.Grupprum.render(el) : renderLottning(el));
-    ({ lottning: renderLottning, grupprum, klasser: renderKlasser, klassrum: renderKlassrum, sparade: renderSparade, data: renderData }[ui.tab] || renderLottning)(v);
+    const guider = el => (window.Guide ? window.Guide.render(el) : renderLottning(el));
+    ({ lottning: renderLottning, grupprum, guider, klasser: renderKlasser, klassrum: renderKlassrum, sparade: renderSparade, data: renderData }[ui.tab] || renderLottning)(v);
     saveUi();
   }
 
@@ -759,6 +760,7 @@
     const go = t.closest('[data-go]');
     if (go) { ui.tab = go.dataset.go; render(); return; }
     if (ui.tab === 'grupprum' && window.Grupprum && window.Grupprum.onClick(e)) return;
+    if (ui.tab === 'guider' && window.Guide && window.Guide.onClick(e)) return;
     const act = t.closest('[data-action]');
     if (act) { if (!act.disabled) actions[act.dataset.action]?.(act); return; }
 
