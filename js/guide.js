@@ -6,7 +6,7 @@ window.Guide = (() => {
   'use strict';
 
   // Bildernas mått, så att sidan inte hoppar när bilderna laddas
-  const SIZES = {"data":[2448,438],"gr-flaggor":[2380,782],"gr-grupper":[2388,774],"gr-historik":[2380,654],"gr-karta":[2380,1034],"gr-platser":[2448,402],"gr-resultat":[2448,746],"gr-schema":[2388,796],"gr-verktyg":[2388,188],"klasser-lagg-till":[1888,596],"klasser-lista":[1896,1258],"klasser-onskemal":[1128,1204],"klasser-plats-rad":[1872,124],"klasser-plats-strikt":[1128,1030],"klasser-plats":[1128,1030],"klasser-sitta-sjalv":[1128,1314],"klassrum-grupprum":[1888,512],"klassrum-mall":[1888,308],"klassrum-rita":[1896,1444],"klassrum-zoner":[1896,1130],"lottning-karta":[2448,1274],"lottning-kontroller":[2448,606],"lottning-rapport":[2448,554],"lottning-spara":[2448,176],"sparade":[2448,478],"uppdateringar":[1128,1538]};
+  const SIZES = {"data":[2448,438],"flytta-dialog":[1128,616],"flytta-info":[2448,186],"flytta-karta":[2448,1530],"gr-flaggor":[2380,782],"gr-grupper":[2388,790],"gr-historik":[2380,654],"gr-karta":[2380,1034],"gr-platser":[2448,402],"gr-resultat":[2448,688],"gr-schema":[2388,796],"gr-verktyg":[2388,188],"klasser-import-forhand":[2408,1118],"klasser-import":[1888,1782],"klasser-lagg-till":[1888,632],"klasser-lista":[1896,1212],"klasser-onskemal":[1128,1542],"klasser-plats-rad":[1872,124],"klasser-plats-strikt":[1128,1030],"klasser-plats":[1128,1030],"klasser-sitta-sjalv":[1128,1542],"klassrum-grupprum":[1888,512],"klassrum-mall":[1888,308],"klassrum-rita":[1896,1444],"klassrum-zoner":[1896,1130],"lottning-karta":[2448,1274],"lottning-kontroller":[2448,606],"lottning-rapport":[2448,288],"lottning-spara":[2448,176],"sparade":[2448,478],"uppdateringar":[1128,1538]};
   const fig = (file, caption) =>
     `<figure class="gfig ${(SIZES[file] || [9999])[0] < 1300 ? 'narrow' : ''}"><img src="img/guide/${file}.jpg" width="${(SIZES[file] || [0])[0]}" height="${(SIZES[file] || [0, 0])[1]}" alt="${caption.replace(/<[^>]+>/g, '').replace(/"/g, '&quot;')}" loading="lazy" data-zoom><figcaption>${caption}</figcaption></figure>`;
   const steps = items => `<ol class="gsteps">${items.map(i => `<li>${i}</li>`).join('')}</ol>`;
@@ -60,27 +60,101 @@ window.Guide = (() => {
       body: () => `
         ${steps([
           'Gå till <b>Klasser</b> och tryck på <i>+ Ny klass</i>.',
-          'Öppna <b>Lägg till elever</b> och skriv eller klistra in ett namn per rad. Skriv <code>, k</code> efter namnet för kille eller <code>, t</code> för tjej om du vill ange det direkt. Du kan klistra in en kolumn från t.ex. Excel.',
-          'Tryck på <b>Lägg till</b>.'
+          'Öppna <b>Lägg till eller importera elever</b> och skriv eller klistra in ett namn per rad. Skriv <code>, k</code> efter namnet för kille eller <code>, t</code> för tjej om du vill ange det direkt. Vill du fylla i allt på en gång – önskemål, plats och mer – se <a href="#" data-gjump="g-import">Importera elever</a>.',
+          'Tryck på <b>Förhandsgranska och lägg till</b>, kontrollera listan och tryck på <b>Importera</b>.'
         ])}
         ${fig('klasser-lagg-till', 'Ett namn per rad. "k" och "t" efter kommat anger kön – det går också bra att låta bli och fylla i det sedan.')}
         <p>I tabellen kan du sedan ändra namn (klicka i namnet), välja <b>Kille/Tjej</b> och fylla i önskemål.</p>
         ${fig('klasser-lista', 'Elevtabellen. ♥ betyder att två elever har önskat varandra. Röda namn i sista kolumnen ska inte sitta med eleven.')}
         <h3 id="g-onskemal">Önskemål</h3>
-        <p>Klicka i rutan <b>Önskar sitta med</b> på en elev. Bocka i de klasskamrater eleven vill sitta med. Hur många man får önska ställer du in med <b>Max antal önskemål per elev</b> (3 från början).</p>
-        ${fig('klasser-onskemal', 'Rutan för önskemål. När maxantalet är nått går det inte att välja fler.')}
-        <h3 id="g-sjalv">Vill sitta själv</h3>
-        <p>Överst i samma ruta finns valet <b>Vill sitta själv</b>. Då får eleven varken någon bänkkompis eller någon granne precis bredvid sig – i praktiken en egen bänk, eller en kant där ingen sitter intill. Väljer du det tas eventuella kompisönskemål bort, eftersom de inte går ihop.</p>
+        <p>Klicka i rutan <b>Önskar sitta med</b> på en elev. Där finns två sorters val, och du kan kombinera dem fritt:</p>
         <ul>
-          <li>Bocka i <b>Strikt</b> om det måste följas. Annars är det ett önskemål som appen försöker uppfylla.</li>
-          <li>I elevtabellen står det <i>Sitter själv</i> i önskemålskolumnen (och <i>strikt</i> om det är strikt).</li>
-          <li>Efter lottningen visar sammanställningen hur många som fick sitta själva, och på kartan får eleven ✓ om det lyckades.</li>
+          <li><b>Allmänna val</b> överst: <b>Sitta själv</b>, <b>Med en tjej</b> och <b>Med en kille</b>. "En tjej" och "en kille" betyder vem som helst – det viktiga är att det är en tjej eller kille, inte vem.</li>
+          <li><b>Namngivna kamrater</b> under: bocka i de klasskamrater eleven vill sitta med. Hur många man får välja ställer du in med <b>Max antal önskemål per elev</b> (3 från början). De allmänna valen räknas inte in i maxantalet.</li>
         </ul>
-        ${fig('klasser-sitta-sjalv', 'Valet "Vill sitta själv" är ikryssat – då går det inte att välja kamrater.')}
+        <p>Eleven räknas som nöjd om <b>minst ett</b> av valen uppfylls. Har en elev valt <i>Maja</i>, <i>Ella</i> och <i>Sitta själv</i> blir det lika bra om hen hamnar bredvid Maja, bredvid Ella eller får sitta själv. "Sitta med" betyder bänkkompis – eller granne vid en bänk som står kant i kant.</p>
+        ${fig('klasser-onskemal', 'Rutan för önskemål: allmänna val överst, namngivna kamrater under och "Strikt" längst ner.')}
+        <h3 id="g-strikt-onskemal">Strikt önskemål</h3>
+        <p>Längst ner i rutan finns <b>Strikt</b>. Är det ikryssat <b>måste</b> minst ett av elevens önskemål uppfyllas – appen går då före andra hänsyn för att klara det, så länge det är möjligt. Utan strikt försöker appen, men önskemålet kan vika för t.ex. andra elevers önskemål eller regeln om kön.</p>
+        ${tip('Elias vill sitta med en kille, vilken som helst, och det är viktigt: välj <b>Med en kille</b> och <b>Strikt</b>. Saga vill sitta med Alva – annars hellre själv: välj <b>Alva</b> och <b>Sitta själv</b>. Noah vill sitta med en tjej eller med Hugo: välj <b>Med en tjej</b> och <b>Hugo</b>.', 'ex')}
+        <h3 id="g-sjalv">Sitta själv</h3>
+        <p>Med <b>Sitta själv</b> får eleven varken någon bänkkompis eller någon granne precis bredvid sig – i praktiken en egen bänk, eller en kant där ingen sitter intill. Det kan vara elevens enda önskemål, eller ett av flera.</p>
+        ${fig('klasser-sitta-sjalv', 'En elev som vill sitta med sina kompisar – eller annars själv. Valen syns sedan som etiketter i elevtabellen.')}
+        ${tip('Att sitta själv kräver <b>tomma platser</b>. Har klassrummet 32 platser och klassen 26 elever finns 6 tomma platser. Varje elev som sitter själv behöver minst en tom plats bredvid sig – oftast den andra platsen i bänken. Är ett strikt önskemål om att sitta själv omöjligt säger appen till efter lottningen och berättar hur många tomma platser det finns.', 'warn')}
+        <p>I elevtabellen visas valen som etiketter: namn, <span class="chip sm alone">Sitta själv</span>, <span class="chip sm gen-t">En tjej</span>, <span class="chip sm gen-k">En kille</span> och <span class="tag strict">strikt</span>. Efter lottningen får eleven ✓ på kartan om något av önskemålen uppfylldes.</p>
         ${tip('Att sitta själv kräver <b>tomma platser</b>. Har klassrummet 32 platser och klassen 26 elever finns 6 tomma platser. Varje elev som sitter själv behöver minst en tom plats bredvid sig – oftast den andra platsen i bänken. Är det fler som vill sitta själva än det finns tomma platser säger appen till efter lottningen. Är det fullt i rummet går det inte alls.', 'warn')}
         <h3>Ska inte sitta med</h3>
         <p>I kolumnen <b>Ska inte sitta med</b> väljer du elever som inte bör hamna bredvid varandra. Det gäller åt båda hållen, och lottningen undviker det mycket starkt.</p>
         ${tip('Lottningen försöker i första hand se till att så många som möjligt får sitta med minst en av dem de önskat. Fler önskemål per elev ger fler möjligheter att lyckas.')}`
+    },
+    {
+      id: 'g-import', icon: '📥', title: 'Importera elever – text och Excel', lead: 'Lägg in hela klassen med kön, önskemål och platser på en gång.',
+      body: () => `
+        <p>I rutan <b>Lägg till eller importera elever</b> under <b>Klasser</b> kan du skriva in allt om eleverna direkt, en elev per rad. Det gamla sättet fungerar fortfarande: bara namn, eller namn och <code>k</code>/<code>t</code>.</p>
+        <h3>Så skriver du en rad</h3>
+        <p>Först namnet. Sedan, åtskilt med <b>komma</b>, de uppgifter du vill ha med – i <b>valfri ordning</b>. Allt utom namnet får utelämnas.</p>
+        <table class="syntax-table gtable">
+          <tr><th>Skriv</th><th>Betyder</th></tr>
+          <tr><td><code>k</code> eller <code>t</code></td><td>kille eller tjej (även <i>kille</i>, <i>tjej</i>)</td></tr>
+          <tr><td><code>med: Maja; Ella</code></td><td>vill sitta med – flera namn åtskilda med <b>semikolon</b></td></tr>
+          <tr><td><code>med: Maja; en tjej; själv</code></td><td>de allmänna valen skrivs i samma lista: <code>en tjej</code>, <code>en kille</code> och <code>själv</code></td></tr>
+          <tr><td><code>med!: Alva; själv</code></td><td>utropstecken efter <i>med</i> = <b>strikt</b>, minst ett måste uppfyllas</td></tr>
+          <tr><td><code>inte: Hugo; Liam</code></td><td>ska inte sitta med</td></tr>
+          <tr><td><code>plats: bak</code></td><td>var i rummet (se nedan)</td></tr>
+          <tr><td><code>plats!: fram vänster</code></td><td>utropstecken efter <i>plats</i> = <b>strikt</b>, måste följas</td></tr>
+          <tr><td><code>själv</code></td><td>vill sitta själv (kortform när det är enda önskemålet)</td></tr>
+          <tr><td><code>själv!</code></td><td>måste sitta själv (strikt)</td></tr>
+          <tr><td><code>en tjej</code> / <code>en kille</code></td><td>kortform: vill sitta med en tjej / kille, vem som helst</td></tr>
+        </table>
+        ${tip(`<pre class="syntax-ex">Alva, t, med: Maja; Ella, plats: bak
+Elias, k, inte: Hugo
+Maja
+Hugo, k, plats!: fram vänster
+Ella, t, själv
+Saga, t, med: Alva; själv
+Noah, k, med!: en kille</pre>
+          <p>Alva är tjej, vill sitta med Maja eller Ella och helst längst bak. Elias ska inte sitta med Hugo. För Maja står bara namnet. Hugo måste sitta längst fram till vänster. Ella vill sitta själv. Saga vill sitta med Alva – eller själv. Noah måste sitta med en kille, vilken som helst.</p>`, 'ex')}
+        ${tip('Skriv <code>en tjej</code> och <code>en kille</code> (med "en") när du menar ett önskemål. Ett ensamt <code>t</code>, <code>tjej</code>, <code>k</code> eller <code>kille</code> direkt efter namnet betyder elevens eget kön.', 'warn')}
+        <h3>Ord för plats</h3>
+        <ul>
+          <li>En hel rad: <code>fram</code>, <code>mittenraden</code>, <code>bak</code></li>
+          <li>En hel sida: <code>vänster</code>, <code>höger</code> (och <code>mittenkolumnen</code>)</li>
+          <li>En ruta: rad + sida, t.ex. <code>bak vänster</code>, <code>fram mitten</code>, <code>mitten höger</code> – och <code>mitten</code> ensamt för rutan i mitten</li>
+          <li>Flera delar med semikolon: <code>plats: bak vänster; bak mitten</code></li>
+          <li>Strikt: <code>plats!: …</code> eller ordet <code>strikt</code> sist, t.ex. <code>plats: fram strikt</code></li>
+        </ul>
+        ${fig('klasser-import', 'Rutan med exempel. Under "Så skriver du" finns hela förklaringen i appen.')}
+        <h3>Förhandsgranska</h3>
+        <p>När du trycker på <b>Förhandsgranska och lägg till</b> visas först en lista över vad som kommer att hända. Ingenting sparas förrän du trycker på <b>Importera</b>.</p>
+        ${fig('klasser-import-forhand', 'Förhandsgranskningen: nya elever märks "ny", elever som redan finns märks "uppdateras". Överst står det som behöver kontrolleras – här ett felstavat namn.')}
+        <ul>
+          <li><b>Finns eleven redan</b> uppdateras bara det som står på raden. Står det t.ex. bara <code>Elias, inte: Hugo</code> behåller Elias sitt kön, sina önskemål och sin plats.</li>
+          <li>Namnen i <code>med</code> och <code>inte</code> måste stämma med elevernas namn. Stora och små bokstäver spelar ingen roll. Ett namn som inte hittas visas som en varning och hoppas över.</li>
+          <li>Önskar någon fler än klassens <i>Max antal önskemål</i> tas de första med och du får en varning.</li>
+          <li>Står både <code>själv</code> och <code>med:</code> på samma rad gäller <i>själv</i>.</li>
+          <li>Rader som börjar med <code>#</code> hoppas över – bra för egna anteckningar.</li>
+        </ul>
+        <h3 id="g-excel">Excel</h3>
+        <p>Har du klassen i Excel kan du importera filen direkt med <b>📄 Importera Excel-fil</b> (.xlsx, .xls, .csv eller .ods). Första bladet läses, med en elev per rad och dessa rubriker på första raden:</p>
+        <div class="table-wrap"><table class="list-table gtable xl">
+          <tr><th>Namn</th><th>Kön</th><th>Vill sitta med</th><th>Sitta själv</th><th>Strikt önskemål</th><th>Ska inte sitta med</th><th>Plats i rummet</th><th>Strikt plats</th></tr>
+          <tr><td>Alva</td><td>t</td><td>Maja; Ella</td><td></td><td></td><td></td><td>bak</td><td></td></tr>
+          <tr><td>Elias</td><td>k</td><td>Hugo</td><td></td><td></td><td>Liam</td><td></td><td></td></tr>
+          <tr><td>Maja</td><td>t</td><td>Alva; en tjej</td><td></td><td></td><td></td><td></td><td></td></tr>
+          <tr><td>Hugo</td><td>k</td><td></td><td></td><td></td><td></td><td>fram vänster</td><td>ja</td></tr>
+          <tr><td>Ella</td><td>t</td><td></td><td>ja</td><td></td><td></td><td></td><td></td></tr>
+          <tr><td>Liam</td><td>k</td><td>Elias</td><td>ja</td><td>ja</td><td></td><td></td><td></td></tr>
+        </table></div>
+        <ul>
+          <li>Kolumnerna får stå i <b>valfri ordning</b>, och de du inte behöver kan du ta bort. Bara <i>Namn</i> krävs.</li>
+          <li>Tomma celler är okej.</li>
+          <li>Flera namn i en cell skiljer du med semikolon eller komma.</li>
+          <li>I <i>Vill sitta med</i> kan du också skriva <i>en tjej</i> eller <i>en kille</i>. I <i>Sitta själv</i>, <i>Strikt önskemål</i> och <i>Strikt plats</i> skriver du <i>ja</i>.</li>
+        </ul>
+        ${tip('Enklast är att trycka på <b>⬇ Ladda ner Excel-mall</b> i en tom klass. Då får du en färdig fil med rätt rubriker och några exempelrader att skriva över. I en klass med elever heter knappen <b>Ladda ner som Excel</b> och ger hela klassen – ändra i filen och importera den igen, så uppdateras eleverna.')}
+        ${tip('Du behöver inte spara en fil: markera cellerna i Excel (med rubrikraden), kopiera och klistra in i textrutan. Appen känner igen att det kommer från Excel.')}
+        <h3>Visa klassen som text</h3>
+        <p><b>Visa som text</b> visar hela klassen i radformatet ovan. Kopiera den för att spara en lista, ändra i den eller klistra in den i en annan klass.</p>`
     },
     {
       id: 'g-plats', icon: '📍', title: 'Platsönskemål – var i rummet', lead: 'Fram, mitten eller bak – till vänster, i mitten eller till höger. Strikt eller önskemål.',
@@ -146,6 +220,30 @@ window.Guide = (() => {
         <p>Under <b>Sparade</b> ser du alla sparade placeringar. <b>Öppna</b> tar dig tillbaka till Lottning med placeringen, där du kan ändra, skriva ut eller uppdatera den.</p>
         ${fig('sparade', 'Sparade placeringar, nyast först. Filtrera på klass uppe till höger.')}
         ${tip('Sparade placeringar är också startpunkten för grupprummen – se nästa avsnitt.')}`
+    },
+    {
+      id: 'g-flytta', icon: '➡️', title: 'Flytta en placering till ett annat klassrum', lead: 'Samma klass, samma bänkkompisar – i en annan sal.',
+      body: () => `
+        <p>Ska klassen byta sal kan du ta med placeringen dit. Det som flyttas är <b>placeringen som visas på fliken Lottning just nu</b> – alltså även de ändringar du gjort för hand efter lottningen.</p>
+        ${steps([
+          'Se till att placeringen du vill flytta visas på <b>Lottning</b>. Vill du flytta en sparad placering: tryck på <b>Flytta…</b> vid den under <b>Sparade</b> – då öppnas den och flyttrutan visas direkt.',
+          'Tryck på <b>➡️ Flytta till annat klassrum</b>.',
+          'Välj klassrummet placeringen ska flyttas till och tryck på <b>Flytta</b>.',
+          'Titta på resultatet och sammanställningen. Är du nöjd – <b>spara som ny placering</b>.'
+        ])}
+        ${fig('flytta-dialog', 'Välj vilket klassrum placeringen ska flyttas till. Rutan varnar om det nya rummet har för få platser.')}
+        <h3>Hur appen matchar</h3>
+        <ul>
+          <li><b>Bänkkompisar hålls ihop.</b> De som delar bänk gör det även i det nya rummet, och vem som sitter till vänster och höger i bänken behålls.</li>
+          <li><b>Varje bänk hamnar så nära samma ställe som möjligt.</b> Appen jämför var bänkarna står i förhållande till hela rummet: en bänk längst fram till vänster hamnar längst fram till vänster även i den nya salen, så långt det går. Den räknar på hela klassen samtidigt så att det blir så bra som möjligt totalt.</li>
+          <li><b>Låsta elever</b> är fortfarande låsta efter flytten, på sin nya plats.</li>
+          <li>Har det nya rummet <b>färre bänkar</b> slås elever som sitter ensamma ihop två och två, med dem som satt närmast varandra först.</li>
+          <li>Har det nya rummet <b>färre platser</b> än det finns elever hamnar de som inte får plats under <i>Saknar plats</i>. Klicka på ett namn och sedan på en tom plats, eller lotta om.</li>
+        </ul>
+        ${fig('flytta-info', 'Efter flytten berättar appen varifrån placeringen kom och hur många bänkpar som fick sitta kvar ihop.')}
+        ${fig('flytta-karta', 'Samma placering i Sal 12, där bänkarna står fristående i tre kolumner.')}
+        ${tip('Bänkpar följer med, men <b>grannar vid bänkar som stod ihop</b> kanske inte gör det – det beror på hur det nya rummet ser ut. Därför kan fler önskemål vara ouppfyllda efteråt, och platsönskemål kan hamna lite annorlunda. Titta på sammanställningen. Vill du hellre att appen tar full hänsyn till önskemålen i det nya rummet: tryck på <b>Lotta om platserna – behåll bänkkompisar</b> eller lotta en helt ny placering.', 'warn')}
+        ${tip('Den ursprungliga sparade placeringen påverkas inte. Det du flyttar blir en ny placering i det nya rummet, som du sparar för sig.')}`
     },
     {
       id: 'g-gr', icon: '🚪', title: 'Grupprum – steg för steg', lead: 'Grupper, lediga rum, rumslottning och cirkulationsschema. Det stora avsnittet.',
@@ -278,6 +376,12 @@ window.Guide = (() => {
           <dd>Nej. Grupprumsdelen läser bara placeringen för att skapa grupper. Den ändrar den aldrig.</dd>
           <dt>Måste grupperna vara lika stora?</dt>
           <dd>Nej. En grupp kan vara 2, 3, 4 eller 6 elever. Rättvisan räknas per elev.</dd>
+          <dt>Kan jag lägga in önskemål för hela klassen på en gång?</dt>
+          <dd>Ja, skriv dem i textrutan med en elev per rad, t.ex. <code>Alva, t, med: Maja; Ella, plats: bak</code>, eller importera en Excel-fil. Se <a href="#" data-gjump="g-import">Importera elever</a>.</dd>
+          <dt>Kan jag ta med en placering när klassen byter sal?</dt>
+          <dd>Ja. Tryck på <i>Flytta till annat klassrum</i> på fliken Lottning. Bänkkompisarna hålls ihop och bänkarna hamnar så nära samma ställe som möjligt. Se avsnittet <a href="#" data-gjump="g-flytta">Flytta en placering</a>.</dd>
+          <dt>Kan en elev önska att sitta med någon – eller annars själv?</dt>
+          <dd>Ja. Välj kamraterna och kryssa också i <i>Sitta själv</i>. Eleven är nöjd om något av dem uppfylls. Samma sak med <i>Med en tjej</i> och <i>Med en kille</i>.</dd>
           <dt>En elev som vill sitta själv fick ändå sällskap – varför?</dt>
           <dd>Det finns för få tomma platser. Varje elev som sitter själv behöver en tom plats bredvid sig. Sammanställningen efter lottningen säger hur många tomma platser det finns. Gör önskemålet strikt för de elever där det är viktigast, så går de före.</dd>
           <dt>En elev med strikt platskrav hamnade fel – varför?</dt>

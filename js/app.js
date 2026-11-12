@@ -6,8 +6,29 @@
 
   // ---------- Version och uppdateringar ----------
   // Höj APP_VERSION och version.json tillsammans vid varje ny version.
-  const APP_VERSION = '1.4.0';
+  const APP_VERSION = '1.7.0';
   const CHANGELOG = [
+    { v: '1.7.0', date: '2026-11-12', items: [
+      'Önskemålen har fått <b>allmänna val</b>: <i>sitta själv</i>, <i>sitta med en tjej</i> och <i>sitta med en kille</i> (vem som helst).',
+      'De allmänna valen kan kombineras fritt med namngivna kamrater – t.ex. "med Maja eller Ella, annars själv". Eleven räknas som nöjd om <b>minst ett</b> av valen uppfylls.',
+      '<b>Strikt</b> gäller nu alla önskemål: minst ett av elevens val måste uppfyllas.',
+      'Importen förstår <code>med: Maja; en tjej; själv</code> och <code>med!:</code> för strikt.'
+    ] },
+    { v: '1.6.0', date: '2026-11-10', items: [
+      'Importera elever <b>med alla uppgifter</b>: kön, vem de vill sitta med, vem de inte ska sitta med, plats i rummet och om de vill sitta själva – en elev per rad, t.ex. <code>Alva, t, med: Maja; Ella, plats: bak</code>.',
+      'Det gamla sättet fungerar som förut: bara namn, eller namn och k/t.',
+      '<b>Excel</b>: importera en .xlsx-, .xls- eller .csv-fil, eller ladda ner klassen som Excel-fil (fungerar också som mall). Det går även att klistra in direkt från Excel.',
+      'Förhandsgranskning före import: se vad som läggs till och uppdateras, och få varningar om namn som inte hittas eller ord som inte går att förstå.',
+      'Finns eleven redan uppdateras bara de uppgifter som står på raden.',
+      'Visa klassen som text – samma format, att kopiera eller spara.'
+    ] },
+    { v: '1.5.0', date: '2026-11-10', items: [
+      'Ny funktion: <b>Flytta till annat klassrum</b> på fliken Lottning. Placeringen som visas – även med ändringar du gjort för hand – flyttas till ett annat klassrum.',
+      'Bänkkompisar hålls ihop, och varje bänk hamnar så nära samma ställe i det nya rummet som möjligt (fram/bak, vänster/höger). Låsta elever är fortfarande låsta.',
+      'Har det nya rummet färre bänkar slås ensamsittande ihop först. Elever som inte får plats visas under "Saknar plats".',
+      'Sparade placeringar kan flyttas direkt från fliken Sparade.',
+      'Exempeldatan har fått ett andra klassrum att prova med.'
+    ] },
     { v: '1.4.0', date: '2026-11-10', items: [
       'Nytt önskemål: <b>Vill sitta själv</b> – eleven får ingen bänkkompis och ingen granne precis bredvid sig. Väljs i samma ruta som önskemålen om vem man vill sitta med.',
       'Även "sitta själv" kan vara <b>strikt</b> (måste följas) eller ett vanligt önskemål.',
@@ -36,6 +57,15 @@
   function miniGrid(s) {
     const cells = posCells(s);
     return `<span class="mini" aria-hidden="true">${[...Array(9).keys()].map(i => `<i class="${cells.includes(i) ? 'on' : ''}"></i>`).join('')}</span>`;
+  }
+  // Allmänna önskemål som chips och som text
+  function generalChips(s) {
+    return (s.alone ? '<span class="chip sm alone">Sitta själv</span>' : '') +
+      (s.wishGirl ? '<span class="chip sm gen-t">En tjej</span>' : '') +
+      (s.wishBoy ? '<span class="chip sm gen-k">En kille</span>' : '');
+  }
+  function wishList(s, nm) {
+    return (s.wishes || []).map(nm).concat(s.wishGirl ? ['en tjej'] : [], s.wishBoy ? ['en kille'] : [], s.alone ? ['sitta själv'] : []);
   }
   function posText(s) {
     const cells = posCells(s);
@@ -190,6 +220,10 @@
     const grupprum = el => (window.Grupprum ? window.Grupprum.render(el) : renderLottning(el));
     const guider = el => (window.Guide ? window.Guide.render(el) : renderLottning(el));
     ({ lottning: renderLottning, grupprum, guider, klasser: renderKlasser, klassrum: renderKlassrum, sparade: renderSparade, data: renderData }[ui.tab] || renderLottning)(v);
+    v.querySelectorAll('details[data-keep]').forEach(d => d.addEventListener('toggle', () => {
+      if (d.dataset.keep === 'add') ui.addOpen = d.open;
+      if (d.dataset.keep === 'syntax') ui.syntaxOpen = d.open;
+    }));
     saveUi();
   }
 
@@ -230,13 +264,11 @@
     const nm = id => ctx.all.get(id)?.name || '?';
     let mark = '';
     if (inf.avoidHit && inf.avoidHit.length) mark = '<span class="mk bad">!</span>';
-    else if (inf.wantAlone) mark = inf.aloneOk ? '<span class="mk ok">✓</span>' : `<span class="mk ${inf.aloneStrict ? 'bad' : 'no'}">–</span>`;
-    else if (inf.hasWish) mark = inf.metIds.length ? '<span class="mk ok">✓</span>' : '<span class="mk no">–</span>';
+    else if (inf.hasWish) mark = inf.wishOk ? '<span class="mk ok">✓</span>' : `<span class="mk ${inf.wishStrict ? 'bad' : 'no'}">–</span>`;
     if (inf.posOk === true) mark += '<span class="pm ok"></span>';
     else if (inf.posOk === false) mark += `<span class="pm ${inf.posStrict ? 'bad' : 'no'}"></span>`;
     const tip = [st.name];
-    if (st.alone) tip.push(`Vill sitta själv${st.alone.strict ? ' (strikt)' : ''} – ${inf.aloneOk ? 'uppfyllt' : 'inte uppfyllt'}`);
-    else if ((st.wishes || []).length) tip.push('Önskar: ' + st.wishes.map(nm).join(', '));
+    if (inf.hasWish) tip.push(`Önskar: ${wishList(st, nm).join(' / ')}${inf.wishStrict ? ' (strikt)' : ''} – ${inf.wishOk ? 'uppfyllt' : 'inte uppfyllt'}`);
     if (inf.partner) tip.push('Bänkkompis: ' + nm(inf.partner));
     if (inf.neigh && inf.neigh.length) tip.push('Granne: ' + inf.neigh.map(nm).join(', '));
     if (inf.avoidHit && inf.avoidHit.length) tip.push('Ska inte sitta med: ' + inf.avoidHit.map(nm).join(', '));
@@ -284,21 +316,19 @@
       rep = '<section class="card report no-print"><div class="stats">';
       if (c.opts.wishes) {
         rep += sm.withWish
-          ? `<div class="stat ${sm.met === sm.withWish ? 'good' : ''}"><b>${sm.met} / ${sm.withWish}</b><span>sitter med någon de önskat</span></div>`
+          ? `<div class="stat ${sm.wishStrictFail.length ? 'bad' : sm.met === sm.withWish ? 'good' : ''}"><b>${sm.met} / ${sm.withWish}</b><span>fick något av sina önskemål</span></div>`
           : '<div class="stat"><b>–</b><span>inga önskemål ifyllda</span></div>';
       }
       if (c.opts.avoid) rep += `<div class="stat ${sm.avoid.length ? 'bad' : 'good'}"><b>${sm.avoid.length}</b><span>${sm.avoid.length === 1 ? 'krock' : 'krockar'} med "ska inte sitta med"</span></div>`;
-      if (c.opts.wishes && sm.aloneWith) rep += `<div class="stat ${sm.aloneStrictFail.length ? 'bad' : sm.aloneMet === sm.aloneWith ? 'good' : ''}"><b>${sm.aloneMet} / ${sm.aloneWith}</b><span>sitter själva som de önskat</span></div>`;
       if (c.opts.pos && sm.posWith) rep += `<div class="stat ${sm.posStrictFail.length ? 'bad' : sm.posMet === sm.posWith ? 'good' : ''}"><b>${sm.posMet} / ${sm.posWith}</b><span>sitter där de önskat i rummet</span></div>`;
       if (sm.same + sm.mixed) rep += `<div class="stat"><b>${sm.same} / ${sm.mixed}</b><span>bänkpar samma kön / blandade</span></div>`;
       rep += `<div class="stat"><b>${present.length - sm.unplaced.length} / ${seats}</b><span>platser används</span></div>`;
       rep += '</div>';
       if (c.opts.wishes && sm.unmet.length) rep += `<p class="small"><b>Önskemål ej uppfyllt:</b> ${sm.unmet.map(id => esc(nm(id))).join(', ')}</p>`;
-      if (c.opts.wishes && (sm.aloneFail.length || sm.aloneStrictFail.length)) {
+      if (c.opts.wishes && sm.wishStrictFail.length) {
         const freeSeats = seats - (present.length - sm.unplaced.length);
-        const why = freeSeats < sm.aloneWith ? ` Det finns bara ${freeSeats} tomma ${freeSeats === 1 ? 'plats' : 'platser'} – varje elev som sitter själv behöver minst en tom plats bredvid sig.` : '';
-        if (sm.aloneStrictFail.length) rep += `<p class="small bad-text"><b>Fick inte sitta själv (strikt):</b> ${sm.aloneStrictFail.map(id => esc(nm(id))).join(', ')}.${why}</p>`;
-        if (sm.aloneFail.length) rep += `<p class="small"><b>Ville sitta själv men fick sällskap:</b> ${sm.aloneFail.map(id => esc(nm(id))).join(', ')}.${sm.aloneStrictFail.length ? '' : why}</p>`;
+        const why = sm.aloneWanted && freeSeats < sm.aloneWanted ? ` Det finns bara ${freeSeats} tomma ${freeSeats === 1 ? 'plats' : 'platser'} – den som sitter själv behöver en tom plats bredvid sig.` : '';
+        rep += `<p class="small bad-text"><b>Strikt önskemål gick inte att uppfylla:</b> ${sm.wishStrictFail.map(id => esc(nm(id))).join(', ')}.${why}</p>`;
       }
       if (c.opts.pos && sm.posStrictFail.length) rep += `<p class="small bad-text"><b>Strikt platskrav gick inte att uppfylla:</b> ${sm.posStrictFail.map(id => esc(nm(id) + ' (' + posText(all.get(id)) + ')')).join(', ')} – finns det tillräckligt många platser i de valda rutorna?</p>`;
       if (c.opts.pos && sm.posFail.length) rep += `<p class="small"><b>Platsönskemål ej uppfyllt:</b> ${sm.posFail.map(id => esc(nm(id))).join(', ')}</p>`;
@@ -336,19 +366,27 @@
         <div class="row wrap gap actions">
           <button class="btn primary" data-action="lotta-full">🎲 Lotta ny placering</button>
           <button class="btn" data-action="lotta-desks" ${hasAsg ? '' : 'disabled'} title="Samma bänkkompisar, nya bänkar">🔀 Lotta om platserna – behåll bänkkompisar</button>
+          <button class="btn" data-action="transfer" ${hasAsg && S.rooms.length > 1 ? '' : 'disabled'} title="${S.rooms.length > 1 ? 'Flytta den här placeringen till ett annat klassrum' : 'Skapa ett klassrum till för att kunna flytta placeringen'}">➡️ Flytta till annat klassrum</button>
           ${c.locks.length ? `<button class="btn ghost" data-action="clear-locks">Lås upp alla (${c.locks.length})</button>` : ''}
           <span class="spacer"></span>
           <button class="btn ghost" data-action="flip">${ui.flipped ? 'Elevvy (tavlan uppe)' : 'Lärarvy (tavlan nere)'}</button>
           <button class="btn ghost" data-action="print" ${hasAsg ? '' : 'disabled'}>Skriv ut</button>
         </div>
       </section>
+      ${ui.transferInfo && ui.transferInfo.roomId === c.roomId ? `<section class="card transfer-info no-print">
+        <b>Placeringen är flyttad</b> från ${esc(ui.transferInfo.from)} till ${esc(r.name)}.
+        ${ui.transferInfo.totalPairs ? `${ui.transferInfo.keptPairs} av ${ui.transferInfo.totalPairs} bänkpar sitter kvar ihop.` : ''}
+        ${ui.transferInfo.unplaced ? `<span class="bad-text">${ui.transferInfo.unplaced} ${ui.transferInfo.unplaced === 1 ? 'elev fick' : 'elever fick'} inte plats.</span>` : ''}
+        <span class="muted">Kontrollera sammanställningen nedan – önskemål om plats eller att sitta själv kan ha påverkats av det nya rummet. Spara som ny placering om du vill behålla den.</span>
+        <button class="icon" data-action="close-transfer" title="Stäng">×</button>
+      </section>` : ''}
       ${rep}
       <section class="card room-card">
         ${hasAsg ? '' : '<p class="hint no-print center">Tryck på <b>Lotta ny placering</b> för att lotta.</p>'}
         ${roomGrid(r, { edit: false, seatHTML: id => seatHTML(id, ctx) })}
         <div class="legend no-print">
           <span><i class="sw g-k"></i>Kille</span><span><i class="sw g-t"></i>Tjej</span>
-          <span><b class="mk ok">✓</b> önskemål uppfyllt (sitter med någon hen önskat, eller själv)</span>
+          <span><b class="mk ok">✓</b> önskemål uppfyllt (en önskad kamrat, en tjej/kille – eller själv)</span>
           <span><b class="mk no">–</b> önskemål ej uppfyllt</span>
           <span><b class="mk bad">!</b> bredvid någon hen inte ska sitta med</span>
           <span><i class="pm ok"></i> plats enligt önskemål</span>
@@ -381,7 +419,7 @@
         const res = Lottning.run({ room: r, students: present, assignment: c.assignment, locks: c.locks, mode, opts: c.opts });
         c.assignment = res.assignment;
         c.locks = c.locks.filter(s => c.assignment[s]);
-        ui.sel = null;
+        ui.sel = null; ui.transferInfo = null;
         save();
         render();
         toast(mode === 'desks' ? 'Nya platser – bänkkompisarna är kvar.' : 'Ny placering lottad!');
@@ -432,7 +470,7 @@
     const sById = new Map(k.students.map(s => [s.id, s]));
     const nameOf = id => sById.get(id)?.name;
     const boys = k.students.filter(s => s.gender === 'k').length, girls = k.students.filter(s => s.gender === 't').length;
-    const withW = k.students.filter(s => (s.wishes || []).length || s.alone).length;
+    const withW = k.students.filter(s => (s.wishes || []).length || s.alone || s.wishGirl || s.wishBoy).length;
     const withP = k.students.filter(s => posCells(s).length).length;
     const max = k.maxWishes ?? 3;
     const rows = k.students.map(s => {
@@ -445,7 +483,7 @@
         <td><input class="sname" value="${esc(s.name)}" data-sname="${s.id}" aria-label="Namn"></td>
         <td><div class="seg">${[['', '–'], ['k', 'Kille'], ['t', 'Tjej']].map(([g, l]) =>
           `<button class="${(s.gender || '') === g ? 'on' : ''} ${g ? 'g-' + g : ''}" data-gender="${g}" data-sid="${s.id}">${l}</button>`).join('')}</div></td>
-        <td><button class="chipbox" data-edit-wishes="${s.id}">${s.alone ? `<span class="chip sm alone">Sitter själv</span>${s.alone.strict ? '<span class="tag strict">strikt</span>' : ''}` : wch || '<span class="add">+ Önska</span>'}</button></td>
+        <td><button class="chipbox" data-edit-wishes="${s.id}">${(wch + generalChips(s)) ? `${wch}${generalChips(s)}${Lottning.wishStrictOf(s) ? '<span class="tag strict">strikt</span>' : ''}` : '<span class="add">+ Önska</span>'}</button></td>
         <td><button class="chipbox" data-edit-avoid="${s.id}">${ach || '<span class="add">+ Lägg till</span>'}</button></td>
         <td><button class="chipbox posbox" data-edit-pos="${s.id}" title="${esc(posText(s) || 'Inget platsönskemål')}">${posCells(s).length ? `${miniGrid(s)}${s.pos.strict ? '<span class="tag strict">strikt</span>' : ''}` : '<span class="add">+ Plats</span>'}</button></td>
         <td><button class="icon danger" data-del-student="${s.id}" title="Ta bort ${esc(s.name)}">×</button></td></tr>`;
@@ -460,11 +498,39 @@
         <label class="field">Max antal önskemål per elev <input type="number" min="0" max="10" value="${max}" data-max-wishes></label>
         <span class="muted small">${k.students.length} elever · ${boys} killar · ${girls} tjejer · ${withW} har önskemål · ${withP} har platsönskemål</span>
       </div>
-      <details class="add-box" ${k.students.length ? '' : 'open'}>
-        <summary>Lägg till elever</summary>
-        <textarea id="bulk" rows="6" placeholder="Ett namn per rad, t.ex.&#10;Alva, t&#10;Elias, k&#10;Maja"></textarea>
-        <p class="muted small">Ett namn per rad. Skriv <code>, k</code> för kille eller <code>, t</code> för tjej efter namnet om du vill ange det direkt. Du kan klistra in en lista från t.ex. Excel.</p>
-        <button class="btn primary" data-action="bulk-add">Lägg till</button>
+      <details class="add-box import-box" data-keep="add" ${k.students.length && !ui.addOpen ? '' : 'open'}>
+        <summary>Lägg till eller importera elever</summary>
+        <textarea id="bulk" rows="7" placeholder="Ett namn per rad, t.ex.&#10;Alva, t, med: Maja; Ella, plats: bak&#10;Elias, k, inte: Hugo&#10;Maja">${esc(ui.bulkDraft || '')}</textarea>
+        <div class="row wrap gap">
+          <button class="btn primary" data-action="bulk-add">Förhandsgranska och lägg till</button>
+          <span class="spacer"></span>
+          <label class="btn">📄 Importera Excel-fil<input type="file" accept=".xlsx,.xls,.csv,.ods" data-xlsx-import hidden></label>
+          <button class="btn ghost" data-action="export-xlsx" title="${k.students.length ? 'Ladda ner klassen som Excel-fil' : 'Ladda ner en Excel-mall med exempel'}">⬇ ${k.students.length ? 'Ladda ner som Excel' : 'Ladda ner Excel-mall'}</button>
+          ${k.students.length ? '<button class="btn ghost" data-action="export-text">Visa som text</button>' : ''}
+        </div>
+        <details class="syntax" data-keep="syntax" ${ui.syntaxOpen ? 'open' : ''}>
+          <summary>Så skriver du – alla uppgifter på en rad</summary>
+          <p class="small">En elev per rad. Först namnet, sedan – åtskilt med komma – de uppgifter du vill, i valfri ordning. Allt utom namnet får utelämnas.</p>
+          <table class="syntax-table small">
+            <tr><td><code>k</code> eller <code>t</code></td><td>kille eller tjej (även <i>kille</i>, <i>tjej</i>)</td></tr>
+            <tr><td><code>med: Maja; Ella</code></td><td>vill sitta med – flera namn åtskilda med semikolon</td></tr>
+            <tr><td><code>med: Maja; en tjej; själv</code></td><td>allmänna val i samma lista: <i>en tjej</i>, <i>en kille</i> (vem som helst) och <i>själv</i>. Eleven är nöjd om <b>minst ett</b> uppfylls</td></tr>
+            <tr><td><code>med!: …</code></td><td>utropstecken = <b>strikt</b>: minst ett av önskemålen måste uppfyllas</td></tr>
+            <tr><td><code>inte: Hugo; Liam</code></td><td>ska inte sitta med</td></tr>
+            <tr><td><code>plats: bak</code></td><td>var i rummet: <i>fram</i>, <i>mittenraden</i>, <i>bak</i>, <i>vänster</i>, <i>höger</i>, <i>mitten</i> – eller kombinerat, t.ex. <i>bak vänster</i>, <i>fram mitten</i>. Flera med semikolon: <code>plats: bak vänster; bak mitten</code></td></tr>
+            <tr><td><code>plats!: fram vänster</code></td><td>utropstecken = <b>strikt</b>, måste följas (det går också att skriva <i>strikt</i> sist)</td></tr>
+            <tr><td><code>själv</code> / <code>själv!</code></td><td>vill sitta själv / måste sitta själv (strikt) – kortform när det är elevens enda önskemål</td></tr>
+          </table>
+          <p class="small"><b>Exempel</b></p>
+          <pre class="syntax-ex">Alva, t, med: Maja; Ella, plats: bak
+Elias, k, inte: Hugo
+Maja
+Hugo, k, plats!: fram vänster
+Ella, t, själv
+Saga, t, med: Alva; en tjej</pre>
+          <p class="small muted">Finns eleven redan i klassen uppdateras bara de uppgifter som står på raden – annat behålls. Namnen i <i>med</i> och <i>inte</i> måste stämma med elevernas namn (stora och små bokstäver spelar ingen roll). Rader som börjar med # hoppas över.</p>
+          <p class="small"><b>Excel:</b> en elev per rad med rubrikerna <i>Namn, Kön, Vill sitta med, Sitta själv, Strikt önskemål, Ska inte sitta med, Plats i rummet, Strikt plats</i>. Kolumnerna får stå i valfri ordning och tomma celler är okej. I <i>Vill sitta med</i> kan du också skriva <i>en tjej</i> eller <i>en kille</i>. I <i>Sitta själv</i>, <i>Strikt önskemål</i> och <i>Strikt plats</i> skriver du <i>ja</i>. Ladda ner mallen ovan för att se hur det ser ut. Du kan också markera cellerna i Excel, kopiera och klistra in i rutan.</p>
+        </details>
       </details>
       ${k.students.length ? `<div class="table-wrap"><table class="list-table students"><thead><tr><th>Namn</th><th>Kön</th><th>Önskar sitta med</th><th>Ska inte sitta med</th><th>Plats i rummet</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
       <p class="muted small">Klicka i rutorna för att välja önskemål. ♥ betyder att två elever har önskat varandra. Under <i>Plats i rummet</i> väljer du var i klassrummet eleven vill eller måste sitta.</p>` : ''}
@@ -480,41 +546,62 @@
     m.onclick = null;
     const draw = () => {
       const sel = (s[kind] || []).filter(id => k.students.some(x => x.id === id));
-      const isAlone = kind === 'wishes' && !!s.alone;
       const full = sel.length >= max;
-      const desc = kind === 'wishes'
-        ? (isAlone ? 'Eleven vill sitta själv – då väljer man inga kamrater.' : max === 0 ? 'Önskemål är avstängda för klassen (max 0).' : `Välj upp till ${max}. Valda: ${sel.length} av ${max}.`)
+      const isW = kind === 'wishes';
+      const anyWish = isW && (sel.length || s.alone || s.wishGirl || s.wishBoy);
+      const strict = isW && Lottning.wishStrictOf(s);
+      const desc = isW
+        ? (max === 0 ? 'Det går inte att önska namngivna kamrater i den här klassen (max 0).' : `Namngivna kamrater: välj upp till ${max}. Valda: ${sel.length} av ${max}.`)
         : 'Lottningen undviker att placera dem bredvid varandra – åt båda hållen.';
-      const aloneBox = kind !== 'wishes' ? '' : `
-        <div class="alonebox ${isAlone ? 'on' : ''}">
-          <label class="check"><input type="checkbox" data-alone ${isAlone ? 'checked' : ''}> <span><b>Vill sitta själv</b> – ingen bänkkompis och ingen granne precis bredvid</span></label>
-          ${isAlone ? `<label class="check small"><input type="checkbox" data-alone-strict ${s.alone.strict ? 'checked' : ''}> <span><b>Strikt</b> – måste följas</span></label>
-          <p class="small muted">${s.alone.strict ? 'Eleven får alltid sitta själv, så länge det finns tillräckligt många tomma platser i klassrummet.' : 'Ett önskemål: appen försöker, men det kräver tomma platser.'}</p>` : ''}
+      const general = !isW ? '' : `
+        <div class="genbox">
+          <b class="small">Allmänna val</b>
+          <div class="genopts">
+            <label class="gen ${s.alone ? 'on' : ''}"><input type="checkbox" data-gen="alone" ${s.alone ? 'checked' : ''}> <span><b>Sitta själv</b><small>ingen bänkkompis eller granne precis bredvid</small></span></label>
+            <label class="gen ${s.wishGirl ? 'on' : ''}"><input type="checkbox" data-gen="girl" ${s.wishGirl ? 'checked' : ''}> <span><b>Med en tjej</b><small>vilken som helst</small></span></label>
+            <label class="gen ${s.wishBoy ? 'on' : ''}"><input type="checkbox" data-gen="boy" ${s.wishBoy ? 'checked' : ''}> <span><b>Med en kille</b><small>vilken som helst</small></span></label>
+          </div>
+        </div>`;
+      const strictBox = !isW ? '' : `
+        <div class="strictrow ${strict ? 'on' : ''}">
+          <label class="check"><input type="checkbox" data-wstrict ${strict ? 'checked' : ''} ${anyWish ? '' : 'disabled'}> <span><b>Strikt</b> – minst ett av valen måste uppfyllas</span></label>
+          <p class="small muted">Eleven räknas som nöjd om <b>minst ett</b> av de valda önskemålen uppfylls. ${strict ? 'Strikt: appen ger inte upp förrän något av dem är uppfyllt, så länge det går.' : 'Utan strikt försöker appen, men det kan vika för andra önskemål.'}</p>
         </div>`;
       m.innerHTML = `<form method="dialog" class="modal">
-        <h3>${kind === 'wishes' ? `Vem vill ${esc(s.name)} sitta med?` : `Vem ska ${esc(s.name)} inte sitta med?`}</h3>
-        ${aloneBox}
+        <h3>${isW ? `Vem vill ${esc(s.name)} sitta med?` : `Vem ska ${esc(s.name)} inte sitta med?`}</h3>
+        ${general}
         <p class="muted small">${desc}</p>
-        <div class="pick ${isAlone ? 'dimmed' : ''}">${k.students.filter(x => x.id !== sid).map(x => {
+        <div class="pick">${k.students.filter(x => x.id !== sid).map(x => {
           const on = sel.includes(x.id);
-          const dis = (!on && full) || isAlone;
+          const dis = !on && full;
           return `<label class="pk ${on ? 'on' : ''} ${dis ? 'dis' : ''}"><input type="checkbox" value="${x.id}" ${on ? 'checked' : ''} ${dis ? 'disabled' : ''}> ${esc(x.name)}</label>`;
         }).join('')}</div>
+        ${strictBox}
         <div class="row end"><button class="btn primary">Klar</button></div></form>`;
     };
     draw();
+    const tidy = () => {
+      // Strikt utan några önskemål betyder inget – ta bort det.
+      if (!((s.wishes || []).length || s.alone || s.wishGirl || s.wishBoy)) delete s.wishStrict;
+    };
     m.onchange = e => {
       const cb = e.target;
       if (cb.type !== 'checkbox') return;
-      if (cb.matches('[data-alone]')) {
-        if (cb.checked) { s.alone = { strict: false }; s.wishes = []; } else delete s.alone;
+      if (cb.matches('[data-gen]')) {
+        const key = { alone: 'alone', girl: 'wishGirl', boy: 'wishBoy' }[cb.dataset.gen];
+        if (cb.checked) s[key] = key === 'alone' ? {} : true; else delete s[key];
+        tidy(); save(); draw(); return;
+      }
+      if (cb.matches('[data-wstrict]')) {
+        if (cb.checked) s.wishStrict = true; else delete s.wishStrict;
+        if (s.alone) s.alone = {}; // gammalt strikt-fält på "sitta själv" ersätts av det gemensamma
         save(); draw(); return;
       }
-      if (cb.matches('[data-alone-strict]')) { s.alone = { strict: cb.checked }; save(); draw(); return; }
       let sel = (s[kind] || []).slice();
       if (cb.checked) { if (sel.length < max) sel.push(cb.value); }
       else sel = sel.filter(i => i !== cb.value);
       s[kind] = sel;
+      tidy();
       save();
       draw();
     };
@@ -572,6 +659,57 @@
     m.showModal();
   }
 
+  function openTransfer() {
+    const c = ensureCurrent();
+    const k = klass(c.classId), from = room(c.roomId);
+    const others = S.rooms.filter(x => x.id !== c.roomId);
+    if (!others.length) return toast('Det finns inget annat klassrum att flytta till.');
+    if (!Object.keys(c.assignment).length) return toast('Det finns ingen placering att flytta.');
+    const placed = Object.keys(c.assignment).length;
+    const m = $('#modal');
+    m.onchange = null; m.onclick = null; m.onclose = null;
+    m.innerHTML = `<form method="dialog" class="modal">
+      <h3>Flytta placeringen till ett annat klassrum</h3>
+      <p class="small muted">${esc(k.name)} sitter just nu i <b>${esc(from.name)}</b> (${placed} elever placerade). Bänkkompisarna hålls ihop och varje bänk hamnar så nära samma ställe i det nya rummet som möjligt – fram blir fram, vänster blir vänster. Låsta elever förblir låsta.</p>
+      <label class="field">Flytta till <select id="tr-room">${others.map(x => `<option value="${x.id}">${esc(x.name)} – ${x.desks.length} bänkar, ${x.desks.length * 2} platser</option>`).join('')}</select></label>
+      <p class="small" id="tr-warn"></p>
+      <p class="small muted">Den ursprungliga placeringen påverkas inte om den är sparad. Spara den flyttade placeringen som en ny när du är nöjd.</p>
+      <div class="row end"><button class="btn ghost" value="cancel">Avbryt</button><button type="button" class="btn primary" data-do-transfer>Flytta</button></div>
+    </form>`;
+    const warn = () => {
+      const t = room($('#tr-room', m).value);
+      const free = t.desks.length * 2;
+      $('#tr-warn', m).innerHTML = free < placed
+        ? `<span class="bad-text">${esc(t.name)} har bara ${free} platser – ${placed - free} ${placed - free === 1 ? 'elev' : 'elever'} kommer att sakna plats.</span>`
+        : t.desks.length < Object.keys(groupByDesk(c.assignment)).length
+          ? `<span class="muted">${esc(t.name)} har färre bänkar än det sitter par/ensamma nu – några som sitter ensamma kan behöva dela bänk.</span>` : '';
+    };
+    m.onchange = e => { if (e.target.id === 'tr-room') warn(); };
+    m.onclick = e => {
+      if (!e.target.closest('[data-do-transfer]')) return;
+      const to = room($('#tr-room', m).value);
+      const res = Lottning.transfer(from, to, c.assignment, c.locks);
+      c.roomId = to.id;
+      c.assignment = res.assignment;
+      c.locks = res.locks;
+      c.savedId = null;
+      ui.sel = null;
+      ui.transferInfo = { roomId: to.id, from: from.name, keptPairs: res.keptPairs, totalPairs: res.totalPairs, unplaced: res.unplaced.length };
+      ui.tab = 'lottning';
+      save();
+      m.close();
+      render();
+      toast(`Placeringen är flyttad till ${to.name}.`);
+    };
+    warn();
+    m.showModal();
+  }
+  function groupByDesk(asg) {
+    const g = {};
+    Object.keys(asg).forEach(sid => { g[sid.split(':')[0]] = true; });
+    return g;
+  }
+
   function openChangelog() {
     const m = $('#modal');
     m.onchange = null; m.onclick = null; m.onclose = null;
@@ -607,15 +745,77 @@
       .catch(() => {});
   }
 
-  function parseBulk(text) {
-    return text.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => {
-      const parts = l.split(/[,;\t]/).map(p => p.trim());
-      const g = (parts[1] || '').toLowerCase();
-      let gender = '';
-      if (['k', 'kille', 'p', 'pojke', 'm', 'man', 'b', 'boy'].includes(g)) gender = 'k';
-      if (['t', 'tjej', 'f', 'flicka', 'kvinna', 'girl'].includes(g)) gender = 't';
-      return { id: uid(), name: parts[0], gender, wishes: [], avoid: [] };
-    }).filter(s => s.name);
+  // ---------- Import: förhandsgranskning ----------
+  let xlsxPromise = null;
+  function loadXLSX() {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    if (!xlsxPromise) {
+      xlsxPromise = new Promise((resolve, reject) => {
+        const sc = document.createElement('script');
+        sc.src = 'js/vendor/xlsx.core.min.js?v=' + APP_VERSION;
+        sc.onload = () => (window.XLSX ? resolve(window.XLSX) : reject(new Error('XLSX saknas')));
+        sc.onerror = () => { xlsxPromise = null; reject(new Error('Kunde inte ladda Excel-stödet')); };
+        document.head.appendChild(sc);
+      });
+    }
+    return xlsxPromise;
+  }
+
+  function importFile(file) {
+    loadXLSX().then(X => file.arrayBuffer().then(buf => {
+      const wb = X.read(buf, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = X.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+      const parsed = Import.parseRows(rows);
+      if (!parsed.entries.length) return toast('Hittade inga elever i filen – finns det en kolumn med rubriken "Namn"?');
+      openImportPreview(parsed, file.name);
+    })).catch(() => toast('Filen kunde inte läsas. Är det en Excel- eller CSV-fil?'));
+  }
+
+  function openImportPreview(parsed, source) {
+    const k = klass(ui.classId);
+    const p = Import.plan(k, parsed.entries, uid);
+    const nameOf = id => (p.items.find(it => it.student.id === id) || {}).student?.name || k.students.find(s => s.id === id)?.name || '?';
+    const nNew = p.items.filter(it => it.isNew).length, nUpd = p.items.length - nNew;
+    const probs = p.items.filter(it => it.entry.problems.length);
+    const keep = '<span class="muted">(behålls)</span>';
+    const rowsHtml = p.items.map(it => {
+      const e = it.entry;
+      const cell = (v, fmt) => (v === undefined ? (it.isNew ? '<span class="muted">–</span>' : keep) : fmt(v));
+      return `<tr class="${e.problems.length ? 'warn' : ''}">
+        <td><b>${esc(e.name)}</b> ${it.isNew ? '<span class="tag">ny</span>' : '<span class="tag upd">uppdateras</span>'}</td>
+        <td>${cell(e.gender, g => (g === 'k' ? 'Kille' : g === 't' ? 'Tjej' : '–'))}</td>
+        <td>${(e.alone || e.wishGirl || e.wishBoy) ? generalChips({ alone: e.alone, wishGirl: e.wishGirl, wishBoy: e.wishBoy }) + ' ' : ''}${e.wishStrict ? '<span class="tag strict">strikt</span> ' : ''}${(e.alone || e.wishGirl || e.wishBoy) && it.wishIds === undefined ? '' : cell(it.wishIds, ids => ids.map(id => `<span class="chip sm">${esc(nameOf(id))}</span>`).join(' ') || '–')}</td>
+        <td>${cell(it.avoidIds, ids => ids.map(id => `<span class="chip sm bad">${esc(nameOf(id))}</span>`).join(' ') || '–')}</td>
+        <td>${cell(e.pos, pos => (pos ? `${miniGrid({ pos })} <span class="small">${esc(Import.posToText(pos))}${pos.strict ? ' <span class="tag strict">strikt</span>' : ''}</span>` : '–'))}</td>
+      </tr>`;
+    }).join('');
+    const m = $('#modal');
+    m.onchange = null; m.onclose = null;
+    m.classList.add('wide');
+    m.innerHTML = `<form method="dialog" class="modal import-preview">
+      <h3>Förhandsgranska import till ${esc(k.name)}</h3>
+      <p class="small">${source === 'text' ? 'Från textrutan' : 'Från filen <b>' + esc(source) + '</b>'}: <b>${nNew}</b> ${nNew === 1 ? 'ny elev' : 'nya elever'}${nUpd ? ` och <b>${nUpd}</b> som redan finns och uppdateras` : ''}.</p>
+      ${probs.length || p.problems.length ? `<div class="gbox warn"><b>Kontrollera ${probs.length + p.problems.length} ${probs.length + p.problems.length === 1 ? 'sak' : 'saker'}</b><ul class="small">${
+        p.problems.map(x => `<li>${esc(x)}</li>`).join('') +
+        probs.map(it => `<li><b>${esc(it.entry.name)}</b> (rad ${it.entry.line}): ${it.entry.problems.map(esc).join('; ')}</li>`).join('')
+      }</ul><p class="small muted">Det som inte gick att förstå hoppas över. Allt annat importeras.</p></div>` : '<p class="small good-text">✓ Allt gick att läsa.</p>'}
+      <div class="table-wrap preview-table"><table class="list-table"><thead><tr><th>Namn</th><th>Kön</th><th>Vill sitta med</th><th>Ska inte sitta med</th><th>Plats i rummet</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
+      ${nUpd ? '<p class="small muted">"(behålls)" betyder att uppgiften inte står på raden – eleven som redan finns behåller då det som är ifyllt.</p>' : ''}
+      <div class="row between"><button class="btn ghost" value="cancel">Avbryt</button><button type="button" class="btn primary" data-do-import>Importera ${p.items.length} ${p.items.length === 1 ? 'elev' : 'elever'}</button></div>
+    </form>`;
+    m.onclick = e => {
+      if (!e.target.closest('[data-do-import]')) return;
+      Import.apply(k, p);
+      if (source === 'text') ui.bulkDraft = '';
+      ui.addOpen = false;
+      save();
+      m.close();
+      render();
+      toast(`${nNew} ${nNew === 1 ? 'ny elev' : 'nya elever'}${nUpd ? `, ${nUpd} uppdaterade` : ''}.`);
+    };
+    m.addEventListener('close', () => m.classList.remove('wide'), { once: true });
+    m.showModal();
   }
 
   // ----- Klassrum -----
@@ -745,7 +945,7 @@
         <td>${esc(klass(x.classId)?.name || (x.className || '?') + ' (borttagen)')}</td>
         <td>${esc(room(x.roomId)?.name || (x.roomName || '?') + ' (borttaget)')}</td>
         <td class="muted small">${fmtDate(x.updated || x.created)}</td>
-        <td><div class="row end"><button class="btn" data-open-result="${x.id}">Öppna</button><button class="btn ghost" data-rename-result="${x.id}">Byt namn</button><button class="icon danger" data-del-result="${x.id}" title="Ta bort">×</button></div></td></tr>`).join('')}
+        <td><div class="row end"><button class="btn" data-open-result="${x.id}">Öppna</button><button class="btn ghost" data-transfer-result="${x.id}" ${S.rooms.length > 1 ? '' : 'disabled'} title="Öppna och flytta till ett annat klassrum">Flytta…</button><button class="btn ghost" data-rename-result="${x.id}">Byt namn</button><button class="icon danger" data-del-result="${x.id}" title="Ta bort">×</button></div></td></tr>`).join('')}
       </tbody></table></div>` : '<p class="muted">Inga sparade placeringar ännu. Lotta under fliken Lottning och tryck på <b>Spara som ny placering</b>.</p>'}
     </section>`;
   }
@@ -813,9 +1013,14 @@
     st[4].pos = { cells: [6, 7, 8], strict: false };   // vill sitta längst bak
     st[9].pos = { cells: [0, 1, 2], strict: true };    // måste sitta längst fram
     st[15].pos = { cells: [6], strict: true };         // måste sitta längst bak till vänster
-    st[20].alone = { strict: false }; st[20].wishes = []; // vill sitta själv
+    st[20].alone = {}; st[20].wishes = [];               // vill sitta själv
+    st[22].wishGirl = true;                              // vill sitta med en tjej, vilken som helst
+    st[11].alone = {};                                   // vill sitta med sina kompisar – eller själv
     const k = { id: uid(), name: 'Exempelklass 7B', maxWishes: 3, students: st };
     S.rooms.push(r);
+    const r2 = { id: uid(), name: 'Sal 12', cols: 0, rows: 0, desks: [], groupRooms: [{ id: uid(), name: 'Grupprum 12A', maxGroups: 1 }] };
+    applyTemplate(r2, 3, 5, 1);
+    S.rooms.push(r2);
     S.classes.push(k);
     S.current = { classId: k.id, roomId: r.id, assignment: {}, locks: [], absent: [], opts: { wishes: true, avoid: true, pos: true, gender: 'same' } };
     ui.roomId = r.id; ui.classId = k.id; ui.tab = 'lottning';
@@ -827,6 +1032,8 @@
   const actions = {
     'lotta-full': () => lotta('full'),
     'lotta-desks': () => lotta('desks'),
+    'transfer': () => openTransfer(),
+    'close-transfer': () => { ui.transferInfo = null; render(); },
     'clear-locks': () => { S.current.locks = []; save(); render(); },
     'flip': () => { ui.flipped = !ui.flipped; render(); },
     'zones': () => { ui.zones = !ui.zones; render(); },
@@ -874,10 +1081,42 @@
       save(); render();
     },
     'bulk-add': () => {
+      const text = $('#bulk').value;
+      ui.bulkDraft = text;
+      const parsed = Import.parseText(text);
+      if (!parsed.entries.length) return toast('Skriv minst ett namn.');
+      openImportPreview(parsed, 'text');
+    },
+    'export-xlsx': () => {
       const k = klass(ui.classId);
-      const add = parseBulk($('#bulk').value);
-      if (!add.length) return toast('Skriv minst ett namn.');
-      k.students.push(...add); save(); render(); toast(`${add.length} elev${add.length === 1 ? '' : 'er'} tillagd${add.length === 1 ? '' : 'a'}.`);
+      loadXLSX().then(X => {
+        const nameOf = id => k.students.find(s => s.id === id)?.name;
+        const rows = k.students.length ? Import.toRows(k.students, nameOf) : Import.EXAMPLE_ROWS;
+        const ws = X.utils.aoa_to_sheet(rows);
+        ws['!cols'] = [{ wch: 18 }, { wch: 6 }, { wch: 28 }, { wch: 24 }, { wch: 26 }, { wch: 12 }, { wch: 12 }];
+        const wb = X.utils.book_new();
+        X.utils.book_append_sheet(wb, ws, 'Elever');
+        const safe = k.name.replace(/[^\wåäöÅÄÖ -]/g, '').trim() || 'klass';
+        X.writeFile(wb, k.students.length ? `${safe}.xlsx` : 'elevmall.xlsx');
+      }).catch(() => toast('Excel-stödet kunde inte laddas.'));
+    },
+    'export-text': () => {
+      const k = klass(ui.classId);
+      const nameOf = id => k.students.find(s => s.id === id)?.name;
+      const text = k.students.map(s => Import.toLine(s, nameOf)).join('\n');
+      const m = $('#modal');
+      m.onchange = null; m.onclose = null;
+      m.innerHTML = `<form method="dialog" class="modal">
+        <h3>${esc(k.name)} som text</h3>
+        <p class="small muted">Samma format som när du lägger till elever. Kopiera och spara, eller klistra in i en annan klass.</p>
+        <textarea rows="14" readonly class="mono">${esc(text)}</textarea>
+        <div class="row between"><button type="button" class="btn" data-copy-text>Kopiera</button><button class="btn primary">Stäng</button></div></form>`;
+      m.onclick = e => {
+        if (!e.target.closest('[data-copy-text]')) return;
+        const ta = $('textarea', m); ta.select();
+        (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => toast('Kopierat!')).catch(() => { document.execCommand('copy'); toast('Kopierat!'); });
+      };
+      m.showModal();
     },
     'new-room': () => {
       const name = prompt('Vad heter klassrummet?', '');
@@ -1004,12 +1243,16 @@
     if (cell) { editGridClick(+cell.dataset.x, +cell.dataset.y, null); return; }
 
     // Sparade
-    const or = t.closest('[data-open-result]');
+    const or = t.closest('[data-open-result], [data-transfer-result]');
     if (or) {
-      const res = S.results.find(x => x.id === or.dataset.openResult);
+      if (or.disabled) return;
+      const id = or.dataset.openResult || or.dataset.transferResult;
+      const res = S.results.find(x => x.id === id);
       if (!klass(res.classId) || !room(res.roomId)) return toast('Klassen eller klassrummet finns inte längre.');
       S.current = { classId: res.classId, roomId: res.roomId, assignment: { ...res.assignment }, locks: [...(res.locks || [])], absent: [...(res.absent || [])], opts: { ...res.opts }, savedId: res.id };
-      ui.tab = 'lottning'; ui.sel = null; save(); render(); return;
+      ui.tab = 'lottning'; ui.sel = null; ui.transferInfo = null; save(); render();
+      if (or.dataset.transferResult) openTransfer();
+      return;
     }
     const rr = t.closest('[data-rename-result]');
     if (rr) {
@@ -1033,6 +1276,7 @@
     if (ui.tab === 'grupprum' && window.Grupprum && window.Grupprum.onChange(e)) return;
     if (t.matches('[data-field]')) {
       const c = ensureCurrent(), f = t.dataset.field;
+      ui.transferInfo = null;
       if (f === 'classId') { c.classId = t.value; c.assignment = {}; c.locks = []; c.absent = []; c.savedId = null; }
       else if (f === 'roomId') { c.roomId = t.value; c.assignment = {}; c.locks = []; c.savedId = null; }
       else if (f === 'gender') c.opts.gender = t.value;
@@ -1062,6 +1306,13 @@
       r.mainMaxGroups = n > 0 ? clamp(n, 1, 20) : null; save(); render(); return;
     }
     if (t.matches('[data-res-filter]')) { ui.resFilter = t.value; render(); return; }
+    if (t.matches('[data-xlsx-import]')) {
+      const f = t.files[0];
+      if (f) importFile(f);
+      t.value = '';
+      return;
+    }
+    if (t.matches('#bulk')) { ui.bulkDraft = t.value; return; }
     if (t.matches('[data-import]')) {
       const file = t.files[0];
       const mode = t.dataset.import;
