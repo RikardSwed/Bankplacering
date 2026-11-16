@@ -40,7 +40,18 @@ const Lottning = (() => {
       s.zone = mask; s.zr = rows[0]; s.zc = cols[0];
     });
     const zone = seats.map(s => s.zone);
-    return { seats, partner, neigh, desks, seatIndex, zone };
+    // "Omgivningen" för spridningen av killar/tjejer: platser högst två rutor bort
+    // åt alla håll (bänken framför/bakom, snett, över en gång) – utom bänkkompisen,
+    // som styrs av regeln för kön.
+    const near = seats.map(s => {
+      const out = [];
+      seats.forEach(o => {
+        if (o === s || o.idx === partner[s.idx]) return;
+        if (Math.abs(o.x - s.x) <= 2 && Math.abs(o.y - s.y) <= 2) out.push(o.idx);
+      });
+      return out;
+    });
+    return { seats, partner, neigh, desks, seatIndex, zone, near };
   }
 
   // Delar in raderna (eller kolumnerna) i tre band: fram/mitten/bak eller
@@ -60,6 +71,10 @@ const Lottning = (() => {
     return map;
   }
 
+  // Spridning av killar och tjejer: straff per granne i omgivningen med samma kön.
+  // 0 = ingen hänsyn, 1 = lite, 2 = mycket, 3 = strikt blandat.
+  const MIX = [0, 1, 4, 30];
+
   // Strikt önskemål: minst ett av elevens önskemål måste uppfyllas.
   // (Äldre data: "sitta själv" kunde vara strikt för sig.)
   const wishStrictOf = s => !!(s.wishStrict || (s.alone && s.alone.strict));
@@ -76,6 +91,7 @@ const Lottning = (() => {
     const n = students.length;
     const idx = new Map(students.map((s, i) => [s.id, i]));
     const W = new Uint8Array(n * n), A = new Uint8Array(n * n);
+    const R = new Uint8Array(n * n); // rangordning: 1 = förstahandsval (0 = ingen rangordning)
     const hasWish = new Uint8Array(n), g = new Uint8Array(n);
     const usePos = opts.pos !== false;
     const pm = new Uint16Array(n), ps = new Uint8Array(n);
@@ -90,9 +106,13 @@ const Lottning = (() => {
         if (s.wishGirl) { wg[i] = 1; hasWish[i] = 1; }
         if (s.wishBoy) { wb[i] = 1; hasWish[i] = 1; }
       }
+      let rank = 0;
       (s.wishes || []).forEach(id => {
         const j = idx.get(id);
-        if (j !== undefined && j !== i) { W[i * n + j] = 1; if (useW) hasWish[i] = 1; }
+        if (j !== undefined && j !== i) {
+          W[i * n + j] = 1; if (useW) hasWish[i] = 1;
+          if (s.wishRanked) R[i * n + j] = Math.min(9, ++rank);
+        }
       });
       if (useW && hasWish[i] && wishStrictOf(s)) wstr[i] = 1;
       (s.avoid || []).forEach(id => {
@@ -101,8 +121,9 @@ const Lottning = (() => {
       });
     });
     return {
-      G, n, idx, W, A, hasWish, g, pm, ps, al, wg, wb, wstr,
+      G, n, idx, W, A, R, hasWish, g, pm, ps, al, wg, wb, wstr,
       useW,
+      mix: MIX[opts.mix | 0] || 0,
       useA: opts.avoid !== false,
       rule: opts.gender || 'none'
     };
@@ -110,18 +131,18 @@ const Lottning = (() => {
 
   // Poäng för en placering (högre = bättre).
   function score(P, arr) {
-    const { G, n, W, A, hasWish, g, useW, useA, rule } = P;
+    const { G, n, W, A, R, hasWish, g, useW, useA, rule, mix } = P;
     const posM = P.pm, posS = P.ps, alone = P.al, wantG = P.wg, wantB = P.wb, wStrict = P.wstr;
-    const { partner, neigh, zone } = G;
+    const { partner, neigh, zone, near } = G;
     let sc = 0;
     for (let p = 0; p < arr.length; p++) {
       const a = arr[p];
       if (a < 0) continue;
-      let met = 0, pm = 0, adj = 0;
+      let met = 0, pm = 0, adj = 0, best = 99;
       const b = arr[partner[p]];
       if (b >= 0) {
         adj = 1;
-        if (useW && W[a * n + b]) { met++; pm = 1; if (W[b * n + a]) sc += 6; }
+        if (useW && W[a * n + b]) { met++; pm = 1; if (W[b * n + a]) sc += 6; if (R[a * n + b]) best = R[a * n + b]; }
         else if ((wantG[a] && g[b] === 2) || (wantB[a] && g[b] === 1)) { met++; pm = 1; }
         if (useA && A[a * n + b]) sc -= 400;
         if (rule !== 'none' && g[a] && g[b]) {
@@ -135,6 +156,7 @@ const Lottning = (() => {
         if (c < 0) continue;
         adj = 1;
         if ((useW && W[a * n + c]) || (wantG[a] && g[c] === 2) || (wantB[a] && g[c] === 1)) met++;
+        if (useW && R[a * n + c] && R[a * n + c] < best) best = R[a * n + c];
         if (useA && A[a * n + c]) sc -= 400;
         if (rule !== 'none' && g[a] && g[c]) {
           const same = g[a] === g[c];
@@ -143,12 +165,16 @@ const Lottning = (() => {
       }
       if (useW && hasWish[a]) {
         // Nöjd om minst ett önskemål uppfylls: en önskad kamrat, en tjej/kille bredvid – eller att sitta själv.
-        if (met > 0) sc += 100 + pm * 15 + (met - 1) * 4;
+        if (met > 0) sc += 100 + pm * 15 + (met - 1) * 4 + (best === 1 ? 60 : best === 2 ? 15 : 0); // rangordnat: förstahandsval väger tungt
         else if (alone[a] && !adj) sc += 100;
         else if (wStrict[a]) sc -= 3000;
       }
       if (!adj && !alone[a]) sc -= 20; // sitter ensam – låt hellre tomma platser samlas i hela bänkar
       if (posM[a] && !(zone[p] & posM[a])) sc -= posS[a] ? 3000 : 70; // platsönskemål
+      if (mix && g[a]) { // spridning: straff för samma kön runt omkring
+        const nr = near[p];
+        for (let k = 0; k < nr.length; k++) { const c = arr[nr[k]]; if (c >= 0 && g[c] === g[a]) sc -= mix; }
+      }
     }
     return sc;
   }
@@ -285,7 +311,7 @@ const Lottning = (() => {
     const byId = new Map(students.map(s => [s.id, s]));
     const at = G.seats.map(s => { const id = assignment[s.id]; return byId.has(id) ? id : null; });
     const info = {};
-    const sum = { withWish: 0, met: 0, unmet: [], wishStrictFail: [], aloneWanted: 0, avoid: [], same: 0, mixed: 0, unplaced: [], posWith: 0, posMet: 0, posFail: [], posStrictFail: [] };
+    const sum = { withWish: 0, met: 0, unmet: [], wishStrictFail: [], aloneWanted: 0, rankedWith: 0, rankedFirst: 0, rankedNotFirst: [], avoid: [], same: 0, mixed: 0, unplaced: [], posWith: 0, posMet: 0, posFail: [], posStrictFail: [], nearSame: 0, nearAll: 0, mixExpected: null };
     const placed = new Set(at.filter(Boolean));
     G.seats.forEach((seat, p) => {
       const id = at[p];
@@ -304,13 +330,23 @@ const Lottning = (() => {
       if (wantBoy && adj.some(x => byId.get(x).gender === 'k')) metKinds.push('boy');
       if (wantAlone && !adj.length) metKinds.push('alone');
       const wishOk = hasWish ? metIds.length > 0 || metKinds.length > 0 : null;
+      const ranked = useW && !!s.wishRanked && wishes.length > 0;
+      const bestRank = ranked && metIds.length ? Math.min(...metIds.map(x => wishes.indexOf(x) + 1)) : null;
+      if (ranked) { sum.rankedWith++; if (bestRank === 1) sum.rankedFirst++; else sum.rankedNotFirst.push(id); }
+      if (s.gender) G.near[p].forEach(q => {
+        const o = at[q];
+        if (!o || q < p) return;
+        const go = byId.get(o).gender;
+        if (!go) return;
+        sum.nearAll++; if (go === s.gender) sum.nearSame++;
+      });
       const wishStrict = hasWish && wishStrictOf(s);
       const avoidHit = opts.avoid !== false
         ? adj.filter(x => (s.avoid || []).includes(x) || (byId.get(x).avoid || []).includes(id))
         : [];
       const pmask = opts.pos !== false ? posMaskOf(s) : 0;
       const posOk = pmask ? !!(G.zone[p] & pmask) : null;
-      info[id] = { seatId: seat.id, partner, neigh, hasWish, metIds, avoidHit, posOk, posStrict: !!(pmask && s.pos.strict), metKinds, wishOk, wishStrict, wantAlone, zr: seat.zr, zc: seat.zc };
+      info[id] = { seatId: seat.id, partner, neigh, hasWish, metIds, avoidHit, posOk, posStrict: !!(pmask && s.pos.strict), metKinds, wishOk, wishStrict, wantAlone, ranked, bestRank, zr: seat.zr, zc: seat.zc };
       if (pmask) {
         sum.posWith++;
         if (posOk) sum.posMet++;
@@ -331,6 +367,10 @@ const Lottning = (() => {
       }
     });
     students.forEach(s => { if (!placed.has(s.id)) sum.unplaced.push(s.id); });
+    // Vad slumpen skulle ge: andelen par med samma kön bland de placerade.
+    const gs = students.filter(s => placed.has(s.id) && s.gender);
+    const nb = gs.filter(s => s.gender === 'k').length, ng = gs.length - nb, N = gs.length;
+    if (N > 1) sum.mixExpected = (nb * (nb - 1) + ng * (ng - 1)) / (N * (N - 1));
     return { info, sum };
   }
 

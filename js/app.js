@@ -6,8 +6,16 @@
 
   // ---------- Version och uppdateringar ----------
   // Höj APP_VERSION och version.json tillsammans vid varje ny version.
-  const APP_VERSION = '1.7.0';
+  const APP_VERSION = '1.8.0';
   const CHANGELOG = [
+    { v: '1.8.0', date: '2026-11-16', items: [
+      'Ny inställning vid lottningen: <b>Spridning av killar och tjejer i rummet</b> – ingen hänsyn, lite, mycket eller strikt blandat. Motverkar att alla tjejer hamnar i en del av rummet och alla killar i en annan.',
+      '<b>Rangordnade önskemål</b>: för elever där förstahandsvalet är viktigast kan du rangordna önskemålen (1, 2, 3). Frivilligt per elev.',
+      'Klasslistan kan <b>sorteras</b>: som de lades in, A–Ö, efter kön, eller efter hur lätta de är att placera. Namnväljaren visar namnen A–Ö eller som i klasslistan, och har en sökruta.',
+      '<b>Import från Google Formulär</b> (via Excel eller kopiera–klistra in): appen gissar vad kolumnerna innehåller och du kan ändra. Önskemål i fritext ("Maja och Ella") förstås.',
+      'En klasskolumn i importen: "7c" och "7C" räknas som samma klass. Importera en klass – eller alla klasser på en gång.',
+      'Namn matchas oavsett stora och små bokstäver. Stavfel och smeknamn hamnar i listan <b>Att reda ut</b>, där du väljer vem som menas. Appen kan komma ihåg dina val till nästa import.'
+    ] },
     { v: '1.7.0', date: '2026-11-12', items: [
       'Önskemålen har fått <b>allmänna val</b>: <i>sitta själv</i>, <i>sitta med en tjej</i> och <i>sitta med en kille</i> (vem som helst).',
       'De allmänna valen kan kombineras fritt med namngivna kamrater – t.ex. "med Maja eller Ella, annars själv". Eleven räknas som nöjd om <b>minst ett</b> av valen uppfylls.',
@@ -110,7 +118,7 @@
   try { Object.assign(ui, JSON.parse(localStorage.getItem(KEY + '-ui') || '{}')); } catch (e) { /* ignore */ }
   function saveUi() {
     try {
-      localStorage.setItem(KEY + '-ui', JSON.stringify({ tab: ui.tab, roomId: ui.roomId, classId: ui.classId, flipped: ui.flipped, tool: ui.tool }));
+      localStorage.setItem(KEY + '-ui', JSON.stringify({ tab: ui.tab, roomId: ui.roomId, classId: ui.classId, flipped: ui.flipped, tool: ui.tool, pickSort: ui.pickSort, studentSort: ui.studentSort, rememberAlias: ui.rememberAlias }));
     } catch (e) { /* ignore */ }
   }
 
@@ -233,7 +241,7 @@
     const c = S.current;
     if (!klass(c.classId)) { c.classId = S.classes[0]?.id || null; c.assignment = {}; c.locks = []; c.absent = []; }
     if (!room(c.roomId)) { c.roomId = S.rooms[0]?.id || null; c.assignment = {}; c.locks = []; }
-    c.opts = Object.assign({ wishes: true, avoid: true, pos: true, gender: 'none' }, c.opts || {});
+    c.opts = Object.assign({ wishes: true, avoid: true, pos: true, gender: 'none', mix: 0 }, c.opts || {});
     c.assignment = c.assignment || {};
     c.locks = c.locks || [];
     c.absent = c.absent || [];
@@ -268,7 +276,7 @@
     if (inf.posOk === true) mark += '<span class="pm ok"></span>';
     else if (inf.posOk === false) mark += `<span class="pm ${inf.posStrict ? 'bad' : 'no'}"></span>`;
     const tip = [st.name];
-    if (inf.hasWish) tip.push(`Önskar: ${wishList(st, nm).join(' / ')}${inf.wishStrict ? ' (strikt)' : ''} – ${inf.wishOk ? 'uppfyllt' : 'inte uppfyllt'}`);
+    if (inf.hasWish) tip.push(`Önskar: ${wishList(st, nm).join(st.wishRanked ? ' > ' : ' / ')}${inf.wishStrict ? ' (strikt)' : ''} – ${inf.wishOk ? (inf.bestRank ? `fick ${inf.bestRank}:a hands­valet` : 'uppfyllt') : 'inte uppfyllt'}`);
     if (inf.partner) tip.push('Bänkkompis: ' + nm(inf.partner));
     if (inf.neigh && inf.neigh.length) tip.push('Granne: ' + inf.neigh.map(nm).join(', '));
     if (inf.avoidHit && inf.avoidHit.length) tip.push('Ska inte sitta med: ' + inf.avoidHit.map(nm).join(', '));
@@ -322,9 +330,16 @@
       if (c.opts.avoid) rep += `<div class="stat ${sm.avoid.length ? 'bad' : 'good'}"><b>${sm.avoid.length}</b><span>${sm.avoid.length === 1 ? 'krock' : 'krockar'} med "ska inte sitta med"</span></div>`;
       if (c.opts.pos && sm.posWith) rep += `<div class="stat ${sm.posStrictFail.length ? 'bad' : sm.posMet === sm.posWith ? 'good' : ''}"><b>${sm.posMet} / ${sm.posWith}</b><span>sitter där de önskat i rummet</span></div>`;
       if (sm.same + sm.mixed) rep += `<div class="stat"><b>${sm.same} / ${sm.mixed}</b><span>bänkpar samma kön / blandade</span></div>`;
+      if (c.opts.wishes && sm.rankedWith) rep += `<div class="stat ${sm.rankedFirst === sm.rankedWith ? 'good' : ''}"><b>${sm.rankedFirst} / ${sm.rankedWith}</b><span>fick sitt förstahandsval (rangordnade)</span></div>`;
+      if (sm.nearAll && sm.mixExpected != null) {
+        const share = sm.nearSame / sm.nearAll, exp = sm.mixExpected;
+        const lbl = share <= exp - 0.08 ? 'Jämnt blandat' : share >= exp + 0.06 ? 'Klumpvis' : 'Som slumpen';
+        rep += `<div class="stat ${lbl === 'Jämnt blandat' ? 'good' : lbl === 'Klumpvis' ? 'warnstat' : ''}" title="Av alla som sitter nära varandra (bänken framför, bakom, snett och bredvid – utom bänkkompisen) har ${Math.round(share * 100)} % samma kön. Om placeringen vore helt slumpad skulle det vara ungefär ${Math.round(exp * 100)} %. Lägre = mer blandat."><b>${lbl}</b><span>killar/tjejer i rummet · ${Math.round(share * 100)} % samma kön runt omkring (slump ${Math.round(exp * 100)} %)</span></div>`;
+      }
       rep += `<div class="stat"><b>${present.length - sm.unplaced.length} / ${seats}</b><span>platser används</span></div>`;
       rep += '</div>';
       if (c.opts.wishes && sm.unmet.length) rep += `<p class="small"><b>Önskemål ej uppfyllt:</b> ${sm.unmet.map(id => esc(nm(id))).join(', ')}</p>`;
+      if (c.opts.wishes && sm.rankedNotFirst.length) rep += `<p class="small"><b>Fick inte sitt förstahandsval:</b> ${sm.rankedNotFirst.map(id => { const inf = an.info[id]; return esc(nm(id)) + (inf && inf.bestRank ? ` (fick ${inf.bestRank}:a)` : ''); }).join(', ')}</p>`;
       if (c.opts.wishes && sm.wishStrictFail.length) {
         const freeSeats = seats - (present.length - sm.unplaced.length);
         const why = sm.aloneWanted && freeSeats < sm.aloneWanted ? ` Det finns bara ${freeSeats} tomma ${freeSeats === 1 ? 'plats' : 'platser'} – den som sitter själv behöver en tom plats bredvid sig.` : '';
@@ -351,6 +366,12 @@
             ${opt('none', c.opts.gender, 'Ingen hänsyn')}
             ${opt('same', c.opts.gender, 'Killar med killar, tjejer med tjejer')}
             ${opt('mixed', c.opts.gender, 'Blandat – kille och tjej')}
+          </select></label>
+          <label class="field" title="Hur jämnt killar och tjejer ska fördelas i rummet – bänkarna framför, bakom och bredvid">Spridning kille/tjej i rummet <select data-field="mix">
+            ${opt('0', String(c.opts.mix || 0), 'Ingen hänsyn')}
+            ${opt('1', String(c.opts.mix || 0), 'Lite')}
+            ${opt('2', String(c.opts.mix || 0), 'Mycket')}
+            ${opt('3', String(c.opts.mix || 0), 'Strikt blandat')}
           </select></label>
           <div class="checks">
             <label class="check"><input type="checkbox" data-field="wishes" ${c.opts.wishes ? 'checked' : ''}> Ta hänsyn till önskemål</label>
@@ -459,6 +480,33 @@
   }
 
   // ----- Klasser -----
+  // Hur lätt en elev är att placera: ömsesidiga önskemål och allmänna val gör det lätt;
+  // önskemål som ingen besvarar, strikta krav och många att undvika gör det svårare.
+  function easeOf(s, k) {
+    const byId = new Map(k.students.map(x => [x.id, x]));
+    const w = (s.wishes || []).filter(id => byId.has(id));
+    const mutual = w.filter(id => (byId.get(id).wishes || []).includes(s.id)).length;
+    let e = 0;
+    if (!w.length && !s.alone && !s.wishGirl && !s.wishBoy) e += 2; // inga önskemål – går att sätta var som helst
+    e += mutual * 3 + (s.wishGirl || s.wishBoy ? 2 : 0) + (s.alone ? 1 : 0);
+    if (w.length && !mutual) e -= 2;
+    if (Lottning.wishStrictOf(s)) e -= 2;
+    if (s.pos && s.pos.strict) e -= 2;
+    e -= (s.avoid || []).length;
+    return e;
+  }
+  function sortStudents(k, mode) {
+    const list = k.students.slice();
+    const az = (a, b) => a.name.localeCompare(b.name, 'sv');
+    if (mode === 'az') return list.sort(az);
+    if (mode === 'gender') { const o = { t: 0, k: 1, '': 2 }; return list.sort((a, b) => (o[a.gender || ''] - o[b.gender || '']) || az(a, b)); }
+    if (mode === 'easy' || mode === 'hard') {
+      const sc = new Map(list.map(s => [s.id, easeOf(s, k)]));
+      return list.sort((a, b) => (mode === 'easy' ? sc.get(b.id) - sc.get(a.id) : sc.get(a.id) - sc.get(b.id)) || az(a, b));
+    }
+    return list;
+  }
+
   function renderKlasser(v) {
     if (!klass(ui.classId)) ui.classId = S.classes[0]?.id || null;
     const k = klass(ui.classId);
@@ -473,10 +521,12 @@
     const withW = k.students.filter(s => (s.wishes || []).length || s.alone || s.wishGirl || s.wishBoy).length;
     const withP = k.students.filter(s => posCells(s).length).length;
     const max = k.maxWishes ?? 3;
-    const rows = k.students.map(s => {
-      const wch = (s.wishes || []).filter(nameOf).map(id => {
+    const sortMode = ui.studentSort || 'added';
+    const ordered = sortStudents(k, sortMode);
+    const rows = ordered.map(s => {
+      const wch = (s.wishes || []).filter(nameOf).map((id, i) => {
         const mutual = (sById.get(id).wishes || []).includes(s.id);
-        return `<span class="chip sm ${mutual ? 'mutual' : ''}" ${mutual ? 'title="Önskar varandra"' : ''}>${esc(nameOf(id))}${mutual ? ' ♥' : ''}</span>`;
+        return `<span class="chip sm ${mutual ? 'mutual' : ''}" ${mutual ? 'title="Önskar varandra"' : ''}>${s.wishRanked ? `<span class="rk sm">${i + 1}</span>` : ''}${esc(nameOf(id))}${mutual ? ' ♥' : ''}</span>`;
       }).join('');
       const ach = (s.avoid || []).filter(nameOf).map(id => `<span class="chip sm bad">${esc(nameOf(id))}</span>`).join('');
       return `<tr>
@@ -492,7 +542,7 @@
     v.innerHTML = `<div class="split">${list}<section class="card main">
       <div class="row between">
         <input class="title-input" data-class-name value="${esc(k.name)}" aria-label="Klassens namn">
-        <div class="row"><button class="btn ghost" data-action="sort-students">Sortera A–Ö</button><button class="btn ghost danger" data-action="del-class">Ta bort klass</button></div>
+        <div class="row"><button class="btn ghost danger" data-action="del-class">Ta bort klass</button></div>
       </div>
       <div class="row wrap gap">
         <label class="field">Max antal önskemål per elev <input type="number" min="0" max="10" value="${max}" data-max-wishes></label>
@@ -516,6 +566,7 @@
             <tr><td><code>med: Maja; Ella</code></td><td>vill sitta med – flera namn åtskilda med semikolon</td></tr>
             <tr><td><code>med: Maja; en tjej; själv</code></td><td>allmänna val i samma lista: <i>en tjej</i>, <i>en kille</i> (vem som helst) och <i>själv</i>. Eleven är nöjd om <b>minst ett</b> uppfylls</td></tr>
             <tr><td><code>med!: …</code></td><td>utropstecken = <b>strikt</b>: minst ett av önskemålen måste uppfyllas</td></tr>
+            <tr><td><code>med: Maja &gt; Ella &gt; Hugo</code></td><td><b>rangordnat</b>: Maja är förstahandsvalet, sedan Ella, sedan Hugo</td></tr>
             <tr><td><code>inte: Hugo; Liam</code></td><td>ska inte sitta med</td></tr>
             <tr><td><code>plats: bak</code></td><td>var i rummet: <i>fram</i>, <i>mittenraden</i>, <i>bak</i>, <i>vänster</i>, <i>höger</i>, <i>mitten</i> – eller kombinerat, t.ex. <i>bak vänster</i>, <i>fram mitten</i>. Flera med semikolon: <code>plats: bak vänster; bak mitten</code></td></tr>
             <tr><td><code>plats!: fram vänster</code></td><td>utropstecken = <b>strikt</b>, måste följas (det går också att skriva <i>strikt</i> sist)</td></tr>
@@ -529,10 +580,17 @@ Hugo, k, plats!: fram vänster
 Ella, t, själv
 Saga, t, med: Alva; en tjej</pre>
           <p class="small muted">Finns eleven redan i klassen uppdateras bara de uppgifter som står på raden – annat behålls. Namnen i <i>med</i> och <i>inte</i> måste stämma med elevernas namn (stora och små bokstäver spelar ingen roll). Rader som börjar med # hoppas över.</p>
+          <p class="small"><b>Google Formulär:</b> öppna svaren i Google Kalkylark (eller ladda ner som Excel), markera kolumnerna och klistra in här – eller importera filen. Appen gissar vad kolumnerna innehåller (namn, klass, önskemål …) och du kan ändra i förhandsgranskningen. Önskemål i fritext som "Maja och Ella" eller "1. Maja 2. Ella" förstås. Namn som inte går att koppla till en elev – stavfel och smeknamn – hamnar i listan <i>Att reda ut</i>.</p>
           <p class="small"><b>Excel:</b> en elev per rad med rubrikerna <i>Namn, Kön, Vill sitta med, Sitta själv, Strikt önskemål, Ska inte sitta med, Plats i rummet, Strikt plats</i>. Kolumnerna får stå i valfri ordning och tomma celler är okej. I <i>Vill sitta med</i> kan du också skriva <i>en tjej</i> eller <i>en kille</i>. I <i>Sitta själv</i>, <i>Strikt önskemål</i> och <i>Strikt plats</i> skriver du <i>ja</i>. Ladda ner mallen ovan för att se hur det ser ut. Du kan också markera cellerna i Excel, kopiera och klistra in i rutan.</p>
         </details>
       </details>
-      ${k.students.length ? `<div class="table-wrap"><table class="list-table students"><thead><tr><th>Namn</th><th>Kön</th><th>Önskar sitta med</th><th>Ska inte sitta med</th><th>Plats i rummet</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${ImportUI.classExtras(k)}
+      ${k.students.length ? `<div class="row wrap gap sortrow"><label class="field">Visa eleverna <select data-ssort>
+          ${[['added', 'Som de lades in'], ['az', 'A–Ö'], ['gender', 'Efter kön'], ['easy', 'Lättast att placera först'], ['hard', 'Svårast att placera först']].map(([v, l]) => `<option value="${v}" ${sortMode === v ? 'selected' : ''}>${l}</option>`).join('')}
+        </select></label>
+        ${sortMode === 'easy' || sortMode === 'hard' ? '<span class="small muted">Lätt = önskar någon som önskar tillbaka, eller har allmänna val. Svårt = önskar bara sådana som inte önskar tillbaka, har strikta krav eller många att undvika.</span>' : sortMode === 'added' ? '<span class="small muted">Samma ordning som i importen eller formuläret.</span>' : ''}
+      </div>
+      <div class="table-wrap"><table class="list-table students"><thead><tr><th>Namn</th><th>Kön</th><th>Önskar sitta med</th><th>Ska inte sitta med</th><th>Plats i rummet</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
       <p class="muted small">Klicka i rutorna för att välja önskemål. ♥ betyder att två elever har önskat varandra. Under <i>Plats i rummet</i> väljer du var i klassrummet eleven vill eller måste sitta.</p>` : ''}
     </section></div>`;
   }
@@ -541,19 +599,40 @@ Saga, t, med: Alva; en tjej</pre>
     const k = klass(ui.classId);
     const s = k.students.find(x => x.id === sid);
     if (!s) return;
-    const max = kind === 'wishes' ? (k.maxWishes ?? 3) : Infinity;
+    const isW = kind === 'wishes';
+    const max = isW ? (k.maxWishes ?? 3) : Infinity;
     const m = $('#modal');
-    m.onclick = null;
+    m.onclick = null; m.onchange = null; m.oninput = null;
+    let query = '';
+    const others = () => {
+      const list = k.students.filter(x => x.id !== sid);
+      return (ui.pickSort || 'az') === 'az' ? list.slice().sort((a, b) => a.name.localeCompare(b.name, 'sv')) : list;
+    };
+    // Skalet byggs en gång (så att sökrutan behåller fokus); delarna ritas om var för sig.
+    m.innerHTML = `<form method="dialog" class="modal picker">
+      <h3>${isW ? `Vem vill ${esc(s.name)} sitta med?` : `Vem ska ${esc(s.name)} inte sitta med?`}</h3>
+      <div id="pk-general"></div>
+      <div class="pk-tools">
+        <input type="search" id="pk-search" placeholder="Sök namn…" autocomplete="off">
+        <div class="seg" id="pk-sort"></div>
+      </div>
+      <p class="muted small" id="pk-desc"></p>
+      <div id="pk-ranked"></div>
+      <div class="pick" id="pk-list"></div>
+      <div id="pk-strict"></div>
+      <div class="row end"><button class="btn primary">Klar</button></div></form>`;
+    const filter = () => {
+      const q = query.trim().toLowerCase();
+      m.querySelectorAll('#pk-list .pk').forEach(el => { el.hidden = q && !el.dataset.name.toLowerCase().includes(q); });
+    };
     const draw = () => {
       const sel = (s[kind] || []).filter(id => k.students.some(x => x.id === id));
       const full = sel.length >= max;
-      const isW = kind === 'wishes';
       const anyWish = isW && (sel.length || s.alone || s.wishGirl || s.wishBoy);
       const strict = isW && Lottning.wishStrictOf(s);
-      const desc = isW
-        ? (max === 0 ? 'Det går inte att önska namngivna kamrater i den här klassen (max 0).' : `Namngivna kamrater: välj upp till ${max}. Valda: ${sel.length} av ${max}.`)
-        : 'Lottningen undviker att placera dem bredvid varandra – åt båda hållen.';
-      const general = !isW ? '' : `
+      const ranked = isW && !!s.wishRanked;
+      const nm = id => k.students.find(x => x.id === id)?.name || '?';
+      $('#pk-general', m).innerHTML = !isW ? '' : `
         <div class="genbox">
           <b class="small">Allmänna val</b>
           <div class="genopts">
@@ -562,27 +641,50 @@ Saga, t, med: Alva; en tjej</pre>
             <label class="gen ${s.wishBoy ? 'on' : ''}"><input type="checkbox" data-gen="boy" ${s.wishBoy ? 'checked' : ''}> <span><b>Med en kille</b><small>vilken som helst</small></span></label>
           </div>
         </div>`;
-      const strictBox = !isW ? '' : `
+      $('#pk-sort', m).innerHTML = [['az', 'A–Ö'], ['list', 'Som i klasslistan']].map(([v, l]) =>
+        `<button type="button" class="${(ui.pickSort || 'az') === v ? 'on' : ''}" data-pksort="${v}">${l}</button>`).join('');
+      $('#pk-desc', m).innerHTML = isW
+        ? (max === 0 ? 'Det går inte att önska namngivna kamrater i den här klassen (max 0).' : `Namngivna kamrater: välj upp till ${max}. Valda: ${sel.length} av ${max}.`)
+        : 'Lottningen undviker att placera dem bredvid varandra – åt båda hållen.';
+      $('#pk-ranked', m).innerHTML = !isW ? '' : `
+        <div class="rankbox ${ranked ? 'on' : ''}">
+          <label class="check"><input type="checkbox" data-wranked ${ranked ? 'checked' : ''}> <span><b>Rangordna</b> – förstahandsvalet är viktigast</span></label>
+          ${ranked ? (sel.length ? `<ol class="ranklist">${sel.map((id, i) => `<li><span class="rk">${i + 1}</span><span class="rn">${esc(nm(id))}</span>
+              <button type="button" class="icon" data-rank-up="${id}" ${i === 0 ? 'disabled' : ''} title="Flytta upp">↑</button>
+              <button type="button" class="icon" data-rank-down="${id}" ${i === sel.length - 1 ? 'disabled' : ''} title="Flytta ner">↓</button></li>`).join('')}</ol>
+              <p class="small muted">Ordningen följer i vilken ordning du klickar i namnen. Flytta med pilarna. Allmänna val räknas efter namnen.</p>`
+            : '<p class="small muted">Välj namnen i den ordning de är viktigast.</p>') : ''}
+        </div>`;
+      $('#pk-list', m).innerHTML = others().map(x => {
+        const on = sel.includes(x.id);
+        const dis = !on && full;
+        const rk = ranked && on ? `<span class="rk sm">${sel.indexOf(x.id) + 1}</span>` : '';
+        return `<label class="pk ${on ? 'on' : ''} ${dis ? 'dis' : ''}" data-name="${esc(x.name)}"><input type="checkbox" value="${x.id}" ${on ? 'checked' : ''} ${dis ? 'disabled' : ''}> ${esc(x.name)} ${rk}</label>`;
+      }).join('');
+      $('#pk-strict', m).innerHTML = !isW ? '' : `
         <div class="strictrow ${strict ? 'on' : ''}">
           <label class="check"><input type="checkbox" data-wstrict ${strict ? 'checked' : ''} ${anyWish ? '' : 'disabled'}> <span><b>Strikt</b> – minst ett av valen måste uppfyllas</span></label>
           <p class="small muted">Eleven räknas som nöjd om <b>minst ett</b> av de valda önskemålen uppfylls. ${strict ? 'Strikt: appen ger inte upp förrän något av dem är uppfyllt, så länge det går.' : 'Utan strikt försöker appen, men det kan vika för andra önskemål.'}</p>
         </div>`;
-      m.innerHTML = `<form method="dialog" class="modal">
-        <h3>${isW ? `Vem vill ${esc(s.name)} sitta med?` : `Vem ska ${esc(s.name)} inte sitta med?`}</h3>
-        ${general}
-        <p class="muted small">${desc}</p>
-        <div class="pick">${k.students.filter(x => x.id !== sid).map(x => {
-          const on = sel.includes(x.id);
-          const dis = !on && full;
-          return `<label class="pk ${on ? 'on' : ''} ${dis ? 'dis' : ''}"><input type="checkbox" value="${x.id}" ${on ? 'checked' : ''} ${dis ? 'disabled' : ''}> ${esc(x.name)}</label>`;
-        }).join('')}</div>
-        ${strictBox}
-        <div class="row end"><button class="btn primary">Klar</button></div></form>`;
+      filter();
     };
     draw();
     const tidy = () => {
-      // Strikt utan några önskemål betyder inget – ta bort det.
+      // Strikt och rangordning utan några önskemål betyder inget – ta bort dem.
       if (!((s.wishes || []).length || s.alone || s.wishGirl || s.wishBoy)) delete s.wishStrict;
+    };
+    m.oninput = e => { if (e.target.id === 'pk-search') { query = e.target.value; filter(); } };
+    m.onclick = e => {
+      const so = e.target.closest('[data-pksort]');
+      if (so) { ui.pickSort = so.dataset.pksort; saveUi(); draw(); return; }
+      const up = e.target.closest('[data-rank-up]'), dn = e.target.closest('[data-rank-down]');
+      if (up || dn) {
+        const id = (up || dn).dataset[up ? 'rankUp' : 'rankDown'];
+        const arr = s.wishes.slice(), i = arr.indexOf(id), j = up ? i - 1 : i + 1;
+        if (i < 0 || j < 0 || j >= arr.length) return;
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+        s.wishes = arr; save(); draw();
+      }
     };
     m.onchange = e => {
       const cb = e.target;
@@ -597,6 +699,10 @@ Saga, t, med: Alva; en tjej</pre>
         if (s.alone) s.alone = {}; // gammalt strikt-fält på "sitta själv" ersätts av det gemensamma
         save(); draw(); return;
       }
+      if (cb.matches('[data-wranked]')) {
+        if (cb.checked) s.wishRanked = true; else delete s.wishRanked;
+        save(); draw(); return;
+      }
       let sel = (s[kind] || []).slice();
       if (cb.checked) { if (sel.length < max) sel.push(cb.value); }
       else sel = sel.filter(i => i !== cb.value);
@@ -605,8 +711,9 @@ Saga, t, med: Alva; en tjej</pre>
       save();
       draw();
     };
-    m.onclose = () => render();
+    m.onclose = () => { m.oninput = null; render(); };
     m.showModal();
+    setTimeout(() => { const sr = $('#pk-search', m); if (sr && window.matchMedia('(hover: hover)').matches) sr.focus(); }, 30);
   }
 
   function openPosPicker(sid) {
@@ -766,57 +873,12 @@ Saga, t, med: Alva; en tjej</pre>
       const wb = X.read(buf, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = X.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
-      const parsed = Import.parseRows(rows);
-      if (!parsed.entries.length) return toast('Hittade inga elever i filen – finns det en kolumn med rubriken "Namn"?');
-      openImportPreview(parsed, file.name);
+      if (!rows.some(r => r.some(c => String(c).trim()))) return toast('Filen verkar vara tom.');
+      ImportUI.open({ rows, source: file.name });
     })).catch(() => toast('Filen kunde inte läsas. Är det en Excel- eller CSV-fil?'));
   }
 
-  function openImportPreview(parsed, source) {
-    const k = klass(ui.classId);
-    const p = Import.plan(k, parsed.entries, uid);
-    const nameOf = id => (p.items.find(it => it.student.id === id) || {}).student?.name || k.students.find(s => s.id === id)?.name || '?';
-    const nNew = p.items.filter(it => it.isNew).length, nUpd = p.items.length - nNew;
-    const probs = p.items.filter(it => it.entry.problems.length);
-    const keep = '<span class="muted">(behålls)</span>';
-    const rowsHtml = p.items.map(it => {
-      const e = it.entry;
-      const cell = (v, fmt) => (v === undefined ? (it.isNew ? '<span class="muted">–</span>' : keep) : fmt(v));
-      return `<tr class="${e.problems.length ? 'warn' : ''}">
-        <td><b>${esc(e.name)}</b> ${it.isNew ? '<span class="tag">ny</span>' : '<span class="tag upd">uppdateras</span>'}</td>
-        <td>${cell(e.gender, g => (g === 'k' ? 'Kille' : g === 't' ? 'Tjej' : '–'))}</td>
-        <td>${(e.alone || e.wishGirl || e.wishBoy) ? generalChips({ alone: e.alone, wishGirl: e.wishGirl, wishBoy: e.wishBoy }) + ' ' : ''}${e.wishStrict ? '<span class="tag strict">strikt</span> ' : ''}${(e.alone || e.wishGirl || e.wishBoy) && it.wishIds === undefined ? '' : cell(it.wishIds, ids => ids.map(id => `<span class="chip sm">${esc(nameOf(id))}</span>`).join(' ') || '–')}</td>
-        <td>${cell(it.avoidIds, ids => ids.map(id => `<span class="chip sm bad">${esc(nameOf(id))}</span>`).join(' ') || '–')}</td>
-        <td>${cell(e.pos, pos => (pos ? `${miniGrid({ pos })} <span class="small">${esc(Import.posToText(pos))}${pos.strict ? ' <span class="tag strict">strikt</span>' : ''}</span>` : '–'))}</td>
-      </tr>`;
-    }).join('');
-    const m = $('#modal');
-    m.onchange = null; m.onclose = null;
-    m.classList.add('wide');
-    m.innerHTML = `<form method="dialog" class="modal import-preview">
-      <h3>Förhandsgranska import till ${esc(k.name)}</h3>
-      <p class="small">${source === 'text' ? 'Från textrutan' : 'Från filen <b>' + esc(source) + '</b>'}: <b>${nNew}</b> ${nNew === 1 ? 'ny elev' : 'nya elever'}${nUpd ? ` och <b>${nUpd}</b> som redan finns och uppdateras` : ''}.</p>
-      ${probs.length || p.problems.length ? `<div class="gbox warn"><b>Kontrollera ${probs.length + p.problems.length} ${probs.length + p.problems.length === 1 ? 'sak' : 'saker'}</b><ul class="small">${
-        p.problems.map(x => `<li>${esc(x)}</li>`).join('') +
-        probs.map(it => `<li><b>${esc(it.entry.name)}</b> (rad ${it.entry.line}): ${it.entry.problems.map(esc).join('; ')}</li>`).join('')
-      }</ul><p class="small muted">Det som inte gick att förstå hoppas över. Allt annat importeras.</p></div>` : '<p class="small good-text">✓ Allt gick att läsa.</p>'}
-      <div class="table-wrap preview-table"><table class="list-table"><thead><tr><th>Namn</th><th>Kön</th><th>Vill sitta med</th><th>Ska inte sitta med</th><th>Plats i rummet</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
-      ${nUpd ? '<p class="small muted">"(behålls)" betyder att uppgiften inte står på raden – eleven som redan finns behåller då det som är ifyllt.</p>' : ''}
-      <div class="row between"><button class="btn ghost" value="cancel">Avbryt</button><button type="button" class="btn primary" data-do-import>Importera ${p.items.length} ${p.items.length === 1 ? 'elev' : 'elever'}</button></div>
-    </form>`;
-    m.onclick = e => {
-      if (!e.target.closest('[data-do-import]')) return;
-      Import.apply(k, p);
-      if (source === 'text') ui.bulkDraft = '';
-      ui.addOpen = false;
-      save();
-      m.close();
-      render();
-      toast(`${nNew} ${nNew === 1 ? 'ny elev' : 'nya elever'}${nUpd ? `, ${nUpd} uppdaterade` : ''}.`);
-    };
-    m.addEventListener('close', () => m.classList.remove('wide'), { once: true });
-    m.showModal();
-  }
+
 
   // ----- Klassrum -----
   function renderKlassrum(v) {
@@ -1022,7 +1084,7 @@ Saga, t, med: Alva; en tjej</pre>
     applyTemplate(r2, 3, 5, 1);
     S.rooms.push(r2);
     S.classes.push(k);
-    S.current = { classId: k.id, roomId: r.id, assignment: {}, locks: [], absent: [], opts: { wishes: true, avoid: true, pos: true, gender: 'same' } };
+    S.current = { classId: k.id, roomId: r.id, assignment: {}, locks: [], absent: [], opts: { wishes: true, avoid: true, pos: true, gender: 'same', mix: 1 } };
     ui.roomId = r.id; ui.classId = k.id; ui.tab = 'lottning';
     save(); render();
     toast('Exempeldata inlagd – tryck på Lotta!');
@@ -1075,17 +1137,13 @@ Saga, t, med: Alva; en tjej</pre>
       if (!k || !confirm(`Ta bort klassen "${k.name}" med alla elever och önskemål?`)) return;
       S.classes = S.classes.filter(c => c !== k); ui.classId = null; save(); render();
     },
-    'sort-students': () => {
-      const k = klass(ui.classId);
-      k.students.sort((a, b) => a.name.localeCompare(b.name, 'sv'));
-      save(); render();
-    },
     'bulk-add': () => {
       const text = $('#bulk').value;
       ui.bulkDraft = text;
       const parsed = Import.parseText(text);
+      if (parsed.table) return ImportUI.open({ rows: parsed.table, source: 'inklistrad tabell' });
       if (!parsed.entries.length) return toast('Skriv minst ett namn.');
-      openImportPreview(parsed, 'text');
+      ImportUI.open({ text, source: 'text' });
     },
     'export-xlsx': () => {
       const k = klass(ui.classId);
@@ -1216,6 +1274,7 @@ Saga, t, med: Alva; en tjej</pre>
     if (ep) { openPosPicker(ep.dataset.editPos); return; }
     const ea = t.closest('[data-edit-avoid]');
     if (ea) { openPicker(ea.dataset.editAvoid, 'avoid'); return; }
+    if (ui.tab === 'klasser' && klass(ui.classId) && ImportUI.onClassClick(e, klass(ui.classId))) return;
     const ds = t.closest('[data-del-student]');
     if (ds) {
       const k = klass(ui.classId), id = ds.dataset.delStudent;
@@ -1280,9 +1339,12 @@ Saga, t, med: Alva; en tjej</pre>
       if (f === 'classId') { c.classId = t.value; c.assignment = {}; c.locks = []; c.absent = []; c.savedId = null; }
       else if (f === 'roomId') { c.roomId = t.value; c.assignment = {}; c.locks = []; c.savedId = null; }
       else if (f === 'gender') c.opts.gender = t.value;
+      else if (f === 'mix') c.opts.mix = +t.value || 0;
       else c.opts[f] = t.checked;
       ui.sel = null; save(); render(); return;
     }
+    if (ui.tab === 'klasser' && klass(ui.classId) && ImportUI.onClassChange(e, klass(ui.classId))) return;
+    if (t.matches('[data-ssort]')) { ui.studentSort = t.value; saveUi(); render(); return; }
     if (t.matches('[data-sname]')) {
       const s = klass(ui.classId).students.find(x => x.id === t.dataset.sname);
       if (t.value.trim()) s.name = t.value.trim();
@@ -1339,7 +1401,7 @@ Saga, t, med: Alva; en tjej</pre>
 
   // Delas med grupprum.js
   window.BP = {
-    get S() { return S; }, APP_VERSION, ui, save, render, toast, esc, uid, clamp, room, klass, roomGrid, fmtDate, ensureCurrent
+    get S() { return S; }, APP_VERSION, ui, save, render, toast, esc, uid, clamp, room, klass, roomGrid, fmtDate, ensureCurrent, miniGrid, generalChips, saveUi
   };
 
   document.addEventListener('DOMContentLoaded', () => {
