@@ -6,7 +6,7 @@ window.Guide = (() => {
   'use strict';
 
   // Bildernas mått, så att sidan inte hoppar när bilderna laddas
-  const SIZES = {"import-elevsvar":[2320,500],"import-kolumner-gissade":[2320,424],"klass-att-granska":[1856,568],"data":[2448,438],"flytta-dialog":[1128,616],"flytta-info":[2448,186],"flytta-karta":[2448,1530],"gr-flaggor":[2380,782],"gr-grupper":[2388,774],"gr-historik":[2380,654],"gr-karta":[2380,1034],"gr-platser":[2448,402],"gr-resultat":[2448,746],"gr-schema":[2388,796],"gr-verktyg":[2388,188],"import-formular":[2408,2126],"klass-att-reda-ut":[1896,596],"klasser-import-forhand":[2408,1368],"klasser-import":[1888,1970],"klasser-lagg-till":[1888,632],"klasser-lista":[1896,1358],"klasser-onskemal":[1128,1738],"klasser-plats-rad":[1872,124],"klasser-plats-strikt":[1128,1030],"klasser-plats":[1128,1030],"klasser-rangordna":[1128,1964],"klasser-sitta-sjalv":[1128,1738],"klassrum-grupprum":[1888,512],"klassrum-mall":[1888,308],"klassrum-rita":[1896,1444],"klassrum-zoner":[1896,1130],"lottning-karta":[2448,1274],"lottning-kontroller":[2448,606],"lottning-rapport":[2448,496],"lottning-spara":[2448,176],"sparade":[2448,478],"uppdateringar":[1128,1538]};
+  const SIZES = {"import-elevsvar":[2320,644],"import-kolumner-gissade":[2320,424],"klass-att-granska":[1856,568],"data":[2448,438],"flytta-dialog":[1128,616],"flytta-info":[2448,186],"flytta-karta":[2448,1530],"gr-flaggor":[2380,782],"gr-grupper":[2388,774],"gr-historik":[2380,654],"gr-karta":[2380,1034],"gr-platser":[2448,402],"gr-resultat":[2448,746],"gr-schema":[2388,796],"gr-verktyg":[2388,188],"import-formular":[2408,2590],"klass-att-reda-ut":[1896,596],"klasser-import-forhand":[2408,1662],"klasser-import":[1888,1970],"klasser-lagg-till":[1888,632],"klasser-lista":[1896,1358],"klasser-onskemal":[1128,1738],"klasser-plats-rad":[1872,124],"klasser-plats-strikt":[1128,1030],"klasser-plats":[1128,1030],"klasser-rangordna":[1128,2032],"klasser-sitta-sjalv":[1128,1738],"klassrum-grupprum":[1888,512],"klassrum-mall":[1888,308],"klassrum-rita":[1896,1444],"klassrum-zoner":[1896,1130],"lottning-karta":[2448,1274],"lottning-kontroller":[2448,606],"lottning-rapport":[2448,496],"lottning-spara":[2448,176],"sparade":[2448,478],"uppdateringar":[1128,1538],"import-reda-ut-direkt":[2320,738]};
   const fig = (file, caption) =>
     `<figure class="gfig ${(SIZES[file] || [9999])[0] < 1300 ? 'narrow' : ''}"><img src="img/guide/${file}.jpg" width="${(SIZES[file] || [0])[0]}" height="${(SIZES[file] || [0, 0])[1]}" alt="${caption.replace(/<[^>]+>/g, '').replace(/"/g, '&quot;')}" loading="lazy" data-zoom><figcaption>${caption}</figcaption></figure>`;
   const steps = items => `<ol class="gsteps">${items.map(i => `<li>${i}</li>`).join('')}</ol>`;
@@ -213,6 +213,10 @@ Noah, k, med!: en kille</pre>
         </ul>
         <p>I förhandsgranskningen ser du för varje elev: namnet, vem hen vill och inte vill sitta med, platsen – och sist <b>det eleven faktiskt skrev</b>, så att du kan jämföra.</p>
         ${fig('import-elevsvar', 'Appens tolkning bredvid det eleven skrev. Ella är redan ikryssad för Granska senare, eftersom "vid fönstret" inte går att översätta till en plats.')}
+        <h3 id="g-andra-direkt">Rätta direkt innan du importerar</h3>
+        <p>I rutan <b>Att reda ut</b> får varje elev en egen rad: till vänster namnet och det eleven skrev, till höger en rullista för varje namn som inte gick att koppla – och knappar för <i>Vill sitta med</i>, <i>Ska inte sitta med</i> och <i>Plats</i>. Klicka på en knapp så öppnas samma väljare som i klasslistan. När du trycker <b>Klar</b> kommer du tillbaka till förhandsgranskningen, och ändringen syns direkt i listan längre ner.</p>
+        ${fig('import-reda-ut-direkt', 'Att reda ut: det eleven skrev till vänster, och alla val till höger.')}
+        <p>Samma sak går att göra i listan med alla elever: klicka på kön, önskemålen, "inte med" eller platsen för att ändra. Rutor du har ändrat får en blå kant. Väljer du själv vem eleven vill sitta med försvinner namnen som inte gick att koppla för den eleven – du har ju bestämt.</p>
         <h3 id="g-granska">Elevens text och Granska senare</h3>
         <p>Det eleven skrev <b>sparas på eleven</b> och syns under namnet i klasslistan (💬). Bocka ur <i>Visa elevernas svar</i> om du vill dölja texterna.</p>
         <p>Kryssa i <b>Granska senare</b> i förhandsgranskningen – eller klicka på 🏷 på en rad i klasslistan – för elever du vill titta närmare på. De samlas i rutan <b>Att granska</b> högst upp i klassen, med elevens text, appens tolkning och knappar för att ändra önskemål, "inte med" och plats. Tryck <b>✓ Klar</b> när du är nöjd.</p>
@@ -465,6 +469,8 @@ Noah, k, med!: en kille</pre>
       id: 'g-faq', icon: '💡', title: 'Vanliga frågor', lead: 'Korta svar på sådant som brukar dyka upp.',
       body: () => `
         <dl class="gfaq">
+          <dt>Måste formuläret fråga om kön?</dt>
+          <dd>Nej. Saknas kön sätter du det med knapparna <i>Kille</i>/<i>Tjej</i> direkt i förhandsgranskningen eller i klasslistan efteråt. Finns en könskolumn (k/t, kille/tjej) läses den in.</dd>
           <dt>Jag klistrade in celler och klass och önskemål hamnade fel – vad gör jag?</dt>
           <dd>Öppna <b>Kolumner</b> i förhandsgranskningen och välj rätt för varje kolumn. Appen kommer ihåg ordningen till nästa gång. Se <a href="#" data-gjump="g-klistra-celler">Klistra in bara några celler</a>.</dd>
           <dt>Är en ruta i klassrummet en bänk eller en plats?</dt>

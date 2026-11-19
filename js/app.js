@@ -6,8 +6,13 @@
 
   // ---------- Version och uppdateringar ----------
   // Höj APP_VERSION och version.json tillsammans vid varje ny version.
-  const APP_VERSION = '1.9.0';
+  const APP_VERSION = '1.10.0';
   const CHANGELOG = [
+    { v: '1.10.0', date: '2026-11-19', items: [
+      '<b>Ändra direkt i förhandsgranskningen</b> vid import: klicka på kön, önskemål, "inte med" eller plats – samma väljare som i klasslistan. Ändrade rutor får en blå kant.',
+      '<b>Att reda ut</b> visar en ruta per elev med det eleven skrev, rullistan för varje namn och knappar för önskemål, "inte med" och plats. Det du väljer syns direkt i listan nedanför.',
+      'Kön kan sättas direkt vid importen, även när det inte finns med i det du klistrar in.'
+    ] },
     { v: '1.9.0', date: '2026-11-19', items: [
       'Klistra in <b>bara några celler</b> från Google Kalkylark eller Excel – även utan rubrikrad. Appen gissar vad kolumnerna innehåller utifrån cellerna (namn, klass, önskemål …).',
       'Du kan ändra vad varje kolumn är, och appen <b>kommer ihåg kolumnordningen</b> till nästa gång du klistrar in en likadan tabell.',
@@ -117,6 +122,7 @@
     } catch (e) { return blank(); }
   }
   let S = load();
+  const saveState = () => save(); // för pickers där 'save' kan bytas ut
   function save() {
     try { localStorage.setItem(KEY, JSON.stringify(S)); }
     catch (e) { toast('Kunde inte spara i webbläsaren.'); }
@@ -629,10 +635,13 @@ Saga, t, med: Alva; en tjej</pre>
     </section></div>`;
   }
 
-  function openPicker(sid, kind) {
-    const k = klass(ui.classId);
-    const s = k.students.find(x => x.id === sid);
+  // ctx (valfritt): används från importfönstret, där eleverna inte är sparade än.
+  // { klass: {students, maxWishes}, student, save(), onClose() }
+  function openPicker(sid, kind, ctx) {
+    const k = ctx ? ctx.klass : klass(ui.classId);
+    const s = ctx ? ctx.student : k.students.find(x => x.id === sid);
     if (!s) return;
+    const save = ctx ? ctx.save : saveState;
     const isW = kind === 'wishes';
     const max = isW ? (k.maxWishes ?? 3) : Infinity;
     const m = $('#modal');
@@ -745,15 +754,16 @@ Saga, t, med: Alva; en tjej</pre>
       save();
       draw();
     };
-    m.onclose = () => { m.oninput = null; render(); };
-    m.showModal();
+    m.onclose = () => { m.oninput = null; if (ctx) ctx.onClose(); else render(); };
+    if (!m.open) m.showModal();
     setTimeout(() => { const sr = $('#pk-search', m); if (sr && window.matchMedia('(hover: hover)').matches) sr.focus(); }, 30);
   }
 
-  function openPosPicker(sid) {
-    const k = klass(ui.classId);
-    const s = k.students.find(x => x.id === sid);
+  function openPosPicker(sid, ctx) {
+    const k = ctx ? ctx.klass : klass(ui.classId);
+    const s = ctx ? ctx.student : k.students.find(x => x.id === sid);
     if (!s) return;
+    const save = ctx ? ctx.save : saveState;
     const m = $('#modal');
     const setCells = cells => {
       if (!cells.length) { delete s.pos; return; }
@@ -795,9 +805,9 @@ Saga, t, med: Alva; en tjej</pre>
       s.pos = { cells: posCells(s), strict: e.target.checked };
       save(); draw();
     };
-    m.onclose = () => { m.onclick = null; render(); };
+    m.onclose = () => { m.onclick = null; if (ctx) ctx.onClose(); else render(); };
     draw();
-    m.showModal();
+    if (!m.open) m.showModal();
   }
 
   function openTransfer() {
@@ -1441,7 +1451,7 @@ Saga, t, med: Alva; en tjej</pre>
 
   // Delas med grupprum.js
   window.BP = {
-    get S() { return S; }, APP_VERSION, ui, save, render, toast, esc, uid, clamp, room, klass, roomGrid, fmtDate, ensureCurrent, miniGrid, generalChips, saveUi
+    get S() { return S; }, APP_VERSION, ui, save, render, toast, esc, uid, clamp, room, klass, roomGrid, fmtDate, ensureCurrent, miniGrid, generalChips, saveUi, openPicker, openPosPicker
   };
 
   document.addEventListener('DOMContentLoaded', () => {

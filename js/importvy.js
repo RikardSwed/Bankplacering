@@ -15,7 +15,7 @@ window.ImportUI = (() => {
   function open(src) {
     const { klass, ui } = B();
     const k = klass(ui.classId);
-    sess = { source: src.source || 'text', resolutions: {}, addNames: {}, review: {}, remember: ui.rememberAlias !== false, idCache: {}, mode: 'this', pickGroup: null, ranked: false };
+    sess = { source: src.source || 'text', resolutions: {}, addNames: {}, review: {}, edits: {}, remember: ui.rememberAlias !== false, idCache: {}, mode: 'this', pickGroup: null, ranked: false };
     if (src.rows) {
       sess.kind = 'table';
       sess.rows = src.rows.filter(r => (r || []).some(c => String(c ?? '').trim()));
@@ -40,11 +40,81 @@ window.ImportUI = (() => {
       sess.mode = sess.groups.filter(g => g.key).length > 1 && !cur ? 'all' : 'this';
       compute();
     }
-    const m = $('#modal');
-    m.onchange = onModalChange; m.onclick = onModalClick; m.oninput = null; m.onclose = () => { m.classList.remove('wide'); sess = null; };
-    m.classList.add('wide');
+    attach();
     draw();
-    m.showModal();
+    $('#modal').showModal();
+  }
+
+  function attach() {
+    const m = $('#modal');
+    m.onchange = onModalChange; m.onclick = onModalClick; m.oninput = null;
+    m.onclose = () => { m.classList.remove('wide'); sess = null; };
+    m.classList.add('wide');
+  }
+
+  // ---------- Ändra en elev direkt i förhandsgranskningen ----------
+  function findItem(rk) {
+    for (const t of sess.targets) { const it = t.plan.items.find(x => x.reviewKey === rk); if (it) return { t, it }; }
+    return null;
+  }
+  const WISH_FIELDS = ['alone', 'wishGirl', 'wishBoy', 'wishStrict', 'wishRanked'];
+  // En tillfällig elev med det appen just nu tolkat – den är det väljaren ändrar i.
+  function draftStudent(t, it) {
+    const e = it.entry, base = it.existing || {};
+    const v = { id: it.student.id, name: e.name };
+    v.wishes = (it.wishIds !== undefined ? it.wishIds : base.wishes || []).slice();
+    v.avoid = (it.avoidIds !== undefined ? it.avoidIds : base.avoid || []).slice();
+    const pos = e.pos !== undefined ? e.pos : base.pos;
+    if (pos && (pos.cells || []).length) v.pos = { cells: pos.cells.slice(), strict: !!pos.strict };
+    WISH_FIELDS.forEach(f => { const x = e[f] !== undefined ? e[f] : base[f]; if (x) v[f] = f === 'alone' ? {} : true; });
+    return v;
+  }
+  function openEdit(rk, kind) {
+    const f = findItem(rk);
+    if (!f) return;
+    const { t, it } = f;
+    const m = $('#modal');
+    const form = m.querySelector('.import-preview');
+    sess.scroll = [m.scrollTop, form ? form.scrollTop : 0];
+    const v = draftStudent(t, it);
+    const ctx = {
+      klass: { students: allStudents(t), maxWishes: t.klass.maxWishes ?? 3 },
+      student: v,
+      save: () => {
+        const ed = sess.edits[rk] || (sess.edits[rk] = {});
+        if (kind === 'wishes') { ed.wish = { wishes: v.wishes.slice() }; WISH_FIELDS.forEach(x => { ed.wish[x] = !!v[x]; }); }
+        else if (kind === 'avoid') ed.avoid = v.avoid.slice();
+        else ed.pos = v.pos && v.pos.cells.length ? { cells: v.pos.cells.slice(), strict: !!v.pos.strict } : null;
+      },
+      onClose: () => {
+        attach(); compute(); draw();
+        if (!m.open) m.showModal();
+        const fm = m.querySelector('.import-preview');
+        m.scrollTop = sess.scroll[0]; if (fm) fm.scrollTop = sess.scroll[1];
+      }
+    };
+    m.classList.remove('wide');
+    if (kind === 'pos') B().openPosPicker(v.id, ctx); else B().openPicker(v.id, kind, ctx);
+  }
+  // Lärarens ändringar läggs ovanpå det appen tolkat.
+  function applyEdits(t) {
+    t.plan.items.forEach(it => {
+      const ed = sess.edits[it.reviewKey];
+      it.edited = {};
+      if (!ed) return;
+      const e = it.entry;
+      if (ed.wish) {
+        it.wishIds = ed.wish.wishes.slice();
+        e.alone = ed.wish.alone ? {} : null;
+        ['wishGirl', 'wishBoy', 'wishStrict', 'wishRanked'].forEach(x => { e[x] = !!ed.wish[x]; });
+        it.edited.wish = true;
+      }
+      if (ed.avoid) { it.avoidIds = ed.avoid.slice(); it.edited.avoid = true; }
+      if ('pos' in ed) { e.pos = ed.pos; it.edited.pos = true; }
+      if ('gender' in ed) { e.gender = ed.gender; it.edited.gender = true; }
+    });
+    // Har läraren själv valt önskemålen tas namnen som inte gick att koppla bort.
+    t.plan.unresolved = t.plan.unresolved.filter(u => !((u.kind === 'wish' && u.whoItem.edited.wish) || (u.kind === 'avoid' && u.whoItem.edited.avoid)));
   }
 
   function mapKey() {
@@ -105,6 +175,7 @@ window.ImportUI = (() => {
         it.reviewKey = rk;
         it.review = rk in sess.review ? sess.review[rk] : !!it.entry.uncertain;
       });
+      applyEdits(t);
     });
     sess.targets = targets;
   }
@@ -178,40 +249,76 @@ window.ImportUI = (() => {
           <select data-imp-res="${esc(t.tid)}§${esc(sm.key)}"><option value="new" ${cur === 'new' ? 'selected' : ''}>Ny elev</option>${sm.candidates.map(c => `<option value="${c.id}" ${cur === c.id ? 'selected' : ''}>Samma som ${esc(nameIn(t, c.id))} (${c.why})</option>`).join('')}</select></div>`;
       }).join('')}</div>` : '';
 
-    // --- Att reda ut ---
+    // --- Knappar som öppnar samma väljare som i klasslistan ---
+    const edBtn = (it, kind, inner, extraCls = '') => `<button type="button" class="chipbox ${extraCls} ${it.edited && it.edited[kind === 'wishes' ? 'wish' : kind] ? 'edited' : ''}" data-imp-edit="${kind}" data-imp-item="${esc(it.reviewKey)}" title="Klicka för att ändra">${inner}</button>`;
+    const wishInner = (t, it) => {
+      const e = it.entry;
+      const unr = t.plan.unresolved.filter(u => u.whoItem === it && u.kind === 'wish');
+      const gen = (e.alone || e.wishGirl || e.wishBoy) ? generalChips({ alone: e.alone, wishGirl: e.wishGirl, wishBoy: e.wishBoy }) : '';
+      if (it.wishIds === undefined && !gen && !unr.length) return it.isNew ? '<span class="add">+ Önska</span>' : '<span class="muted small">(behålls)</span>';
+      const html = (it.wishIds || []).map((id, i) => `<span class="chip sm">${e.wishRanked ? `<span class="rk sm">${i + 1}</span>` : ''}${esc(nameIn(t, id))}</span>`).join(' ') + gen +
+        unr.map(u => `<span class="chip sm unk" title="Att reda ut">${esc(u.token)} ?</span>`).join(' ') + (e.wishStrict ? '<span class="tag strict">strikt</span>' : '');
+      return html.trim() || '<span class="add">+ Önska</span>';
+    };
+    const avoidInner = (t, it) => {
+      const unr = t.plan.unresolved.filter(u => u.whoItem === it && u.kind === 'avoid');
+      if (it.avoidIds === undefined && !unr.length) return it.isNew ? '<span class="add">+ Lägg till</span>' : '<span class="muted small">(behålls)</span>';
+      const html = (it.avoidIds || []).map(id => `<span class="chip sm bad">${esc(nameIn(t, id))}</span>`).join(' ') + unr.map(u => ` <span class="chip sm unk">${esc(u.token)} ?</span>`).join('');
+      return html.trim() || '<span class="add">+ Lägg till</span>';
+    };
+    const posInner = it => {
+      const pos = it.entry.pos;
+      if (pos === undefined) return it.isNew ? '<span class="add">+ Plats</span>' : '<span class="muted small">(behålls)</span>';
+      if (!pos || !(pos.cells || []).length) return '<span class="add">+ Plats</span>';
+      return `${miniGrid({ pos })} <span class="small">${esc(I().posToText(pos))}</span>${pos.strict ? '<span class="tag strict">strikt</span>' : ''}`;
+    };
+    const genderBtns = it => {
+      const g = it.entry.gender !== undefined ? it.entry.gender : (it.existing ? it.existing.gender : '');
+      return `<div class="seg sm">${[['', '–'], ['k', 'Kille'], ['t', 'Tjej']].map(([v, l]) => `<button type="button" class="${(g || '') === v ? 'on' : ''} ${v ? 'g-' + v : ''}" data-imp-gender="${v}" data-imp-item="${esc(it.reviewKey)}">${l}</button>`).join('')}</div>`;
+    };
+
+    // --- Att reda ut: en ruta per elev, med det eleven skrev och alla val ---
     const unres = [];
     T.forEach(t => t.plan.unresolved.forEach(u => unres.push({ t, u })));
+    const byStudent = [];
+    unres.forEach(x => {
+      let g = byStudent.find(b => b.it === x.u.whoItem);
+      if (!g) byStudent.push(g = { t: x.t, it: x.u.whoItem, list: [] });
+      g.list.push(x.u);
+    });
     const resolvedCount = T.reduce((a, t) => a + Object.keys(sess.resolutions[t.tid]).filter(x => !x.startsWith('self|')).length, 0);
     const unresHtml = unres.length || resolvedCount ? `<div class="imp-sec warnsec"><b class="small">Att reda ut (${unres.length})</b>
-      <p class="small muted">Namn som inte gick att koppla till en elev – stavfel, smeknamn eller sådant som inte är ett namn. Välj vem som menas, eller hoppa över. Det du inte bestämmer nu hamnar i listan <i>Att reda ut</i> i klassen, så kan du ta det senare.</p>
-      ${unres.map(({ t, u }) => `<div class="unres"><span><b>${esc(u.who)}</b> ${u.kind === 'wish' ? 'vill sitta med' : 'ska inte sitta med'} »${esc(u.token)}«${T.length > 1 ? ` <span class="muted small">(${esc(t.klass.name)})</span>` : ''}</span>
-        ${resSelect(`${t.tid}§${u.key}`, u.candidates, allStudents(t), id => nameIn(t, id), '', u.token)}</div>`).join('')}
+      <p class="small muted">Namn som inte gick att koppla till en elev – stavfel, smeknamn eller sådant som inte är ett namn. Välj vem som menas i rullistan, eller klicka på önskemålen, "inte med" eller platsen för att ändra själv. Det du väljer syns direkt i listan längre ner. Det du inte bestämmer nu hamnar i listan <i>Att reda ut</i> i klassen.</p>
+      ${byStudent.map(({ t, it, list }) => `<div class="ru-card">
+        <div class="ru-left"><b>${esc(it.entry.name)}</b>${T.length > 1 ? ` <span class="muted small">(${esc(t.klass.name)})</span>` : ''}
+          ${it.entry.answer ? `<div class="ru-ans">Eleven skrev: <q>${esc(it.entry.answer)}</q></div>` : ''}</div>
+        <div class="ru-right">
+          ${list.map(u => `<div class="unres"><span>${u.kind === 'wish' ? 'Vill sitta med' : 'Ska inte sitta med'} »${esc(u.token)}«</span>
+            ${resSelect(`${t.tid}§${u.key}`, u.candidates, allStudents(t), id => nameIn(t, id), '', u.token)}</div>`).join('')}
+          <div class="ru-edit">
+            <div><span class="small muted">Vill sitta med</span>${edBtn(it, 'wishes', wishInner(t, it))}</div>
+            <div><span class="small muted">Ska inte sitta med</span>${edBtn(it, 'avoid', avoidInner(t, it))}</div>
+            <div><span class="small muted">Plats</span>${edBtn(it, 'pos', posInner(it), 'posbox')}</div>
+          </div>
+        </div></div>`).join('')}
       ${resolvedCount ? `<p class="small good-text">✓ ${resolvedCount} redda ut. <button type="button" class="linkbtn" data-imp-reset>Ångra mina val</button></p>` : ''}
       <label class="check small"><input type="checkbox" data-imp-remember ${sess.remember ? 'checked' : ''}> Kom ihåg mina val (t.ex. att "micke" = Mikael) till nästa import</label>
     </div>` : '';
 
     // --- Tabell ---
-    const keep = '<span class="muted">(behålls)</span>';
     const anyAnswer = T.some(t => t.plan.items.some(it => it.entry.answer));
-    const anyGender = T.some(t => t.plan.items.some(it => it.entry.gender));
-    const ncol = 5 + (anyAnswer ? 1 : 0) + (anyGender ? 1 : 0);
+    const ncol = 6 + (anyAnswer ? 1 : 0);
     const nReview = T.reduce((a, t) => a + t.plan.items.filter(i => i.review).length, 0);
     const rowsHtml = T.map(t => (T.length > 1 ? `<tr class="grp"><td colspan="${ncol}"><b>${esc(t.klass.name)}</b>${t.isNew ? ' <span class="tag">ny klass</span>' : ''} · ${t.plan.items.length} elever</td></tr>` : '') +
       t.plan.items.map(it => {
         const e = it.entry;
-        const cell = (v, fmt) => (v === undefined ? (it.isNew ? '<span class="muted">–</span>' : keep) : fmt(v));
         const unr = t.plan.unresolved.filter(u => u.whoItem === it);
-        const gen = (e.alone || e.wishGirl || e.wishBoy) ? generalChips({ alone: e.alone, wishGirl: e.wishGirl, wishBoy: e.wishBoy }) + ' ' : '';
-        const wl = it.wishIds === undefined && !gen ? cell(undefined) : (it.wishIds || []).map((id, i) => `<span class="chip sm">${e.wishRanked ? `<span class="rk sm">${i + 1}</span>` : ''}${esc(nameIn(t, id))}</span>`).join(' ') + ' ' + gen +
-          unr.filter(u => u.kind === 'wish').map(u => `<span class="chip sm unk" title="Att reda ut">${esc(u.token)} ?</span>`).join(' ');
-        const al = cell(it.avoidIds, ids => ids.map(id => `<span class="chip sm bad">${esc(nameIn(t, id))}</span>`).join(' ') || '–') +
-          unr.filter(u => u.kind === 'avoid').map(u => ` <span class="chip sm unk">${esc(u.token)} ?</span>`).join('');
         return `<tr class="${it.review ? 'review' : e.problems.length || unr.length ? 'warn' : ''}">
           <td><b>${esc(e.name)}</b> ${it.isNew ? '<span class="tag">ny</span>' : `<span class="tag upd" title="Finns redan som ${esc(it.student.name)}">uppdateras</span>`}</td>
-          ${anyGender ? `<td>${cell(e.gender, g => (g === 'k' ? 'Kille' : g === 't' ? 'Tjej' : '–'))}</td>` : ''}
-          <td>${wl.trim() || '–'}${e.wishStrict ? ' <span class="tag strict">strikt</span>' : ''}</td>
-          <td>${al}</td>
-          <td>${cell(e.pos, pos => (pos ? `${miniGrid({ pos })} <span class="small">${esc(I().posToText(pos))}</span>${pos.strict ? ' <span class="tag strict">strikt</span>' : ''}` : '–'))}</td>
+          <td>${genderBtns(it)}</td>
+          <td>${edBtn(it, 'wishes', wishInner(t, it))}</td>
+          <td>${edBtn(it, 'avoid', avoidInner(t, it))}</td>
+          <td>${edBtn(it, 'pos', posInner(it), 'posbox')}</td>
           ${anyAnswer ? `<td class="answer">${e.answer ? `<q>${esc(e.answer)}</q>` : '<span class="muted">–</span>'}${(e.notes || []).map(n => `<div class="small warn-text">⚠ ${esc(n)}</div>`).join('')}</td>` : ''}
           <td class="rv"><label class="rvbox" title="Markera eleven så att du kan titta på hen senare under Klasser"><input type="checkbox" data-imp-review="${esc(it.reviewKey)}" ${it.review ? 'checked' : ''}> <span>Granska senare</span></label></td></tr>`;
       }).join('')).join('');
@@ -221,7 +328,8 @@ window.ImportUI = (() => {
       <p class="small">${sess.source === 'text' ? 'Från textrutan' : 'Från <b>' + esc(sess.source) + '</b>'}: <b>${nItems}</b> elever${T.length > 1 ? ` i <b>${T.length}</b> klasser` : ''} – ${nNew} nya, ${nItems - nNew} som redan finns och uppdateras.${nUnres ? ` <span class="bad-text">${nUnres} namn att reda ut.</span>` : ''}${nReview ? ` <span class="warn-text">${nReview} markerade att granska senare.</span>` : ''}</p>
       ${cols}${classes}${ranked}${simHtml}${unresHtml}
       ${probs.length ? `<div class="gbox warn"><b>Kontrollera ${probs.length} ${probs.length === 1 ? 'sak' : 'saker'}</b><ul class="small">${probs.map(x => `<li>${x}</li>`).join('')}</ul></div>` : ''}
-      <div class="table-wrap preview-table"><table class="list-table"><thead><tr><th>Namn</th>${anyGender ? '<th>Kön</th>' : ''}<th>Vill sitta med</th><th>Ska inte sitta med</th><th>Plats i rummet</th>${anyAnswer ? '<th>Eleven skrev</th>' : ''}<th></th></tr></thead><tbody>${rowsHtml || `<tr><td colspan="${ncol}" class="muted">Inga elever att importera – kontrollera kolumnerna.</td></tr>`}</tbody></table></div>
+      <div class="table-wrap preview-table"><table class="list-table"><thead><tr><th>Namn</th><th>Kön</th><th>Vill sitta med</th><th>Ska inte sitta med</th><th>Plats i rummet</th>${anyAnswer ? '<th>Eleven skrev</th>' : ''}<th></th></tr></thead><tbody>${rowsHtml || `<tr><td colspan="${ncol}" class="muted">Inga elever att importera – kontrollera kolumnerna.</td></tr>`}</tbody></table></div>
+      <p class="small muted">Klicka på kön, önskemål, "inte med" eller plats för att ändra direkt – precis som i klasslistan. Ändrade rutor får en blå kant.</p>
       ${anyAnswer ? '<p class="small muted">Jämför appens tolkning med det eleven skrev. Det som står under <i>Eleven skrev</i> sparas på eleven, så du kan se det i klasslistan även efteråt. Kryssa i <b>Granska senare</b> för elever du vill titta närmare på – de samlas i listan <i>Att granska</i> under Klasser. Rader med ⚠ är redan ikryssade.</p>' : ''}
       <div class="row between"><button class="btn ghost" value="cancel">Avbryt</button><button type="button" class="btn primary" data-imp-do ${nItems ? '' : 'disabled'}>Importera ${nItems} ${nItems === 1 ? 'elev' : 'elever'}${nUnres ? ` (${nUnres} att reda ut sparas)` : ''}</button></div>
     </form>`;
@@ -268,6 +376,17 @@ window.ImportUI = (() => {
 
   function onModalClick(e) {
     if (!sess) return;
+    const ed = e.target.closest('[data-imp-edit]');
+    if (ed) { openEdit(ed.dataset.impItem, ed.dataset.impEdit); return; }
+    const gb = e.target.closest('[data-imp-gender]');
+    if (gb) {
+      const f = findItem(gb.dataset.impItem);
+      if (!f) return;
+      const cur = f.it.entry.gender !== undefined ? f.it.entry.gender : (f.it.existing ? f.it.existing.gender : '');
+      const x = sess.edits[gb.dataset.impItem] || (sess.edits[gb.dataset.impItem] = {});
+      x.gender = gb.dataset.impGender;
+      compute(); draw(); return;
+    }
     if (e.target.closest('[data-imp-reset]')) { Object.keys(sess.resolutions).forEach(k => { sess.resolutions[k] = {}; }); compute(); draw(); return; }
     if (!e.target.closest('[data-imp-do]')) return;
     const { S, save, render, toast, ui } = B();

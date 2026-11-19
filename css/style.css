@@ -634,3 +634,17 @@ tr.review > td { background: #fff7e0; }
 .rv-ans { margin: 4px 0; font-size: .9em; }
 .rv-int { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
 .small-btn { padding: 3px 8px; font-size: .8em; }
+
+/* v1.10 – ändra direkt i förhandsgranskningen */
+.import-preview .chipbox { border-color: #e6dcc8; background: #fff; min-width: 120px; }
+.import-preview .chipbox:hover { border-color: #b9a988; border-style: solid; }
+.import-preview .chipbox.edited { border: 1px solid #5b8fd6; box-shadow: 0 0 0 2px #e3edfb; }
+.seg.sm button { padding: 3px 7px; font-size: 12px; }
+.ru-card { display: grid; grid-template-columns: minmax(160px, 1fr) 2fr; gap: 10px 16px; border-top: 1px solid #efe1c2; padding: 10px 0; }
+.ru-card:first-of-type { border-top: 0; }
+.ru-left .ru-ans { font-size: 13px; margin-top: 4px; color: #555; }
+.ru-left q { font-style: italic; }
+.ru-right .unres { padding: 3px 0; border-bottom: 0; }
+.ru-edit { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; }
+.ru-edit > div { display: flex; flex-direction: column; gap: 2px; }
+@media (max-width: 700px) { .ru-card { grid-template-columns: 1fr; } }
