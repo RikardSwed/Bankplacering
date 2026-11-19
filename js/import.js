@@ -505,10 +505,31 @@ window.Import = (() => {
   }
 
   // Text från textrutan: rader med komma – eller en tabell inklistrad från Excel/Google (tabbar).
+  // Celler kopierade från Google Kalkylark/Excel: tabbar mellan celler. En cell med radbrytning
+  // (eller citattecken) omges av "…", och "" betyder ett citattecken i texten.
+  function parseTSV(text) {
+    const t = String(text || '').replace(/\r\n?/g, '\n');
+    const rows = [];
+    let row = [], cell = '', i = 0, quoted = false, start = true;
+    while (i < t.length) {
+      const ch = t[i];
+      if (quoted) {
+        if (ch === '"') { if (t[i + 1] === '"') { cell += '"'; i += 2; continue; } quoted = false; i++; continue; }
+        cell += ch; i++; continue;
+      }
+      if (start && ch === '"') { quoted = true; start = false; i++; continue; }
+      if (ch === '\t') { row.push(cell); cell = ''; start = true; i++; continue; }
+      if (ch === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; start = true; i++; continue; }
+      cell += ch; start = false; i++;
+    }
+    if (cell || row.length) { row.push(cell); rows.push(row); }
+    return rows.map(r => r.map(c => c.trim()));
+  }
+
   function parseText(text) {
     const lines = String(text || '').split(/\r?\n/);
     const nonEmpty = lines.filter(l => l.trim());
-    if (nonEmpty.length && nonEmpty[0].includes('\t')) return { table: nonEmpty.map(l => l.split('\t')) };
+    if (nonEmpty.length && nonEmpty[0].includes('\t')) return { table: parseTSV(text).filter(r => r.some(c => c.trim())) };
     const entries = [];
     lines.forEach((l, i) => { if (!l.trim() || l.trim().startsWith('#')) return; const e = parseLine(l, i + 1); if (e) entries.push(e); });
     return { entries };
@@ -704,7 +725,7 @@ window.Import = (() => {
   ];
 
   return {
-    parseText, guessMapping, entriesFromTable, classifyFree, groupByClass, classKey, nameKey, matcher, splitFree,
+    parseText, parseTSV, guessMapping, contentKind, entriesFromTable, classifyFree, groupByClass, classKey, nameKey, matcher, splitFree,
     plan, apply, toLine, toRows, posToText, parsePos, resKey, EXAMPLE_ROWS, HEAD, KIND_LABELS
   };
 })();

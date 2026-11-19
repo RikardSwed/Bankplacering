@@ -6,8 +6,13 @@
 
   // ---------- Version och uppdateringar ----------
   // Höj APP_VERSION och version.json tillsammans vid varje ny version.
-  const APP_VERSION = '1.11.2';
+  const APP_VERSION = '1.11.3';
   const CHANGELOG = [
+    { v: '1.11.3', date: '2026-11-19', items: [
+      'Rättat: svar med <b>radbrytning</b> i cellen (eller citattecken) delades upp på flera rader när de klistrades in från Google Kalkylark/Excel, så att önskemål föll bort eller blev konstiga extra elever.',
+      'Appen varnar om en kolumn som inte används har text som ser ut som svar – t.ex. när en fråga i formuläret ändrats och svaren hamnat i en ny kolumn.',
+      'Två önskemålskolumner utan rubrikrad räknas inte längre som prioritetsordning.'
+    ] },
     { v: '1.11.2', date: '2026-11-19', items: [
       '<b>Gula namn</b> (namn appen inte kunde koppla) visas nu också i väljaren när du klickar på önskemålen eller "inte med". Där kan du koppla dem till rätt elev med ett klick (<i>= Mikael</i>) eller ta bort dem (<i>× Ta bort</i>).',
       'Gula namn försvinner inte längre av sig själva när du ändrar önskemålen – de ligger kvar tills du kopplat eller tagit bort dem. Samma sak går att göra i klasslistan efter importen.'

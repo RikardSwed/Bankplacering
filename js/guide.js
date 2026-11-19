@@ -489,6 +489,8 @@ Noah, k, med!: en kille</pre>
         <dl class="gfaq">
           <dt>En elev skrev många namn utan kommatecken – fungerar det?</dt>
           <dd>Ja. "maja ella hugo alva" eller "maja lind ella hugo" delas upp ord för ord. Ord som inte är ett namn i klassen (t.ex. ett smeknamn) hamnar i <i>Att reda ut</i>, resten kopplas direkt. Har eleven önskat fler än klassen tillåter tas bara de första med – höj <i>Antal önskemål per elev</i> högst upp i importen.</dd>
+          <dt>Några elevers önskemål kom inte med – varför?</dt>
+          <dd>Vanligast är att svaren står i en annan kolumn: ändrar man en fråga i formuläret efter att några svarat lägger Google Kalkylark de nya svaren i en ny kolumn. Ta med alla svarskolumner när du kopierar och välj <i>Önskemål (fritext)</i> för dem under <b>Kolumner</b> – appen varnar med ⚠ om en kolumn som inte används har text. Svar med radbrytningar i cellen fungerar också.</dd>
           <dt>Måste formuläret fråga om kön?</dt>
           <dd>Nej. Saknas kön sätter du det med knapparna <i>Kille</i>/<i>Tjej</i> direkt i förhandsgranskningen eller i klasslistan efteråt. Finns en könskolumn (k/t, kille/tjej) läses den in.</dd>
           <dt>Jag klistrade in celler och klass och önskemål hamnade fel – vad gör jag?</dt>

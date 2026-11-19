@@ -23,11 +23,15 @@ window.ImportUI = (() => {
       Object.assign(sess, g);
       // Har läraren ställt in kolumnerna förut för samma sorts tabell? Använd det igen.
       const saved = (ui.importMaps || {})[mapKey()];
-      if (saved && saved.length === sess.mapping.length) { sess.mapping = saved.slice(); sess.guessed = 'saved'; }
-      sess.colsOpen = !sess.hasHeader || sess.guessed === 'saved';
+      if (saved && saved.length === sess.mapping.length) {
+        // Sparad ordning – men en kolumn som ser ut att innehålla svar hoppas inte över bara för att den gjorde det förra gången.
+        sess.mapping = saved.map((k, j) => (k === 'ignore' && ['wishes', 'name'].includes(sess.mapping[j]) && !sess.hasHeader ? sess.mapping[j] : k));
+        sess.guessed = 'saved';
+      }
+      sess.colsOpen = !sess.hasHeader || sess.guessed === 'saved' || unusedText().length > 0;
       // Flera önskemålskolumner med siffror ("Önskemål 1", "Önskemål 2") = prioritetsordning
       const wishHeads = g.headers.filter((h, i) => g.mapping[i] === 'wishes');
-      sess.ranked = wishHeads.length > 1 && wishHeads.every(h => /\d|första|andra|tredje/i.test(h));
+      sess.ranked = sess.hasHeader && wishHeads.length > 1 && wishHeads.every(h => /\d|första|andra|tredje/i.test(h));
     } else {
       sess.kind = 'lines';
       sess.lines = I().parseText(src.text).entries || [];
@@ -124,6 +128,22 @@ window.ImportUI = (() => {
       if ('gender' in ed) { e.gender = ed.gender; it.edited.gender = true; }
     });
     // Gula namn (att reda ut) ligger kvar tills läraren valt vem som menas eller tagit bort dem.
+  }
+
+  // Kolumner som inte används men har text som liknar svar (t.ex. en extra svarskolumn i formuläret)
+  function unusedText() {
+    if (sess.kind !== 'table') return [];
+    const out = [];
+    const body = sess.rows.slice(sess.hasHeader ? 1 : 0);
+    sess.mapping.forEach((k, j) => {
+      if (k !== 'ignore') return;
+      const vals = body.map(r => String((r || [])[j] ?? '').trim()).filter(Boolean);
+      if (!vals.length) return;
+      const kind = I().contentKind(vals).kind;
+      if (kind !== 'wishes' && kind !== 'name') return;
+      out.push({ label: sess.headers[j] || `Kolumn ${j + 1}`, n: vals.length, sample: vals[0].slice(0, 40) });
+    });
+    return out;
   }
 
   function mapKey() {
@@ -240,6 +260,7 @@ window.ImportUI = (() => {
         ${sess.guessed === 'content' ? '<p class="small warn-text"><b>Ingen rubrikrad hittades</b> – appen har gissat utifrån vad som står i cellerna. Kontrollera att kolumnerna stämmer.</p>' : ''}
         ${sess.guessed === 'saved' ? '<p class="small good-text">✓ Samma kolumnordning som du använde senast.</p>' : ''}
         <p class="small muted">Ändrar du en kolumn kommer appen ihåg ordningen till nästa gång du klistrar in en likadan tabell. En kolumn med <i>Önskemål (fritext)</i> kan innehålla både vem eleven vill och inte vill sitta med, och var i rummet – appen delar upp det.</p>
+        ${unusedText().map(u => `<p class="small bad-text">⚠ <b>${esc(u.label)}</b> används inte, men har text på ${u.n} ${u.n === 1 ? 'rad' : 'rader'} (t.ex. "${esc(u.sample)}"). Är det elevernas svar – välj <i>Önskemål (fritext)</i>.</p>`).join('')}
         <div class="colmap">${sess.headers.map((h, i) => `<div class="colm ${sess.mapping[i] === 'ignore' ? 'off' : ''}">
           <div class="colh" title="${esc(h)}">${esc(h || `Kolumn ${i + 1}`)}</div>
           <div class="cols small muted" title="${esc(sample[i] || '')}">${esc(String(sample[i] ?? '').slice(0, 40)) || '&nbsp;'}</div>
