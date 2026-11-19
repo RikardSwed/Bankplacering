@@ -656,3 +656,10 @@ tr.review > td { background: #fff7e0; }
 .ru-card.done .ru-sum { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .ru-done { justify-content: flex-end; }
 .unres.ok > span:first-child { color: #555; }
+.import-preview .imp-name { width: 150px; font-weight: 600; }
+.import-preview .namecell .tag { margin-top: 3px; display: inline-block; }
+.maxrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.maxrow label { display: inline-flex; align-items: center; gap: 8px; }
+.maxrow .numin { width: 56px; padding: 4px 6px; }
+.import-preview .imp-name { border: 1px solid #e6dcc8; background: #fff; border-radius: 6px; padding: 4px 6px; }
+.import-preview .imp-name:focus { border-color: #5b8fd6; outline: none; }

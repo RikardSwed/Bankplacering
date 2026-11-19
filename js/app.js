@@ -6,8 +6,13 @@
 
   // ---------- Version och uppdateringar ----------
   // Höj APP_VERSION och version.json tillsammans vid varje ny version.
-  const APP_VERSION = '1.10.1';
+  const APP_VERSION = '1.11.0';
   const CHANGELOG = [
+    { v: '1.11.0', date: '2026-11-19', items: [
+      '<b>Rätta namn direkt i importen</b>: klicka på namnet i listan och skriv rätt, t.ex. om eleven skrivit sitt smeknamn ("Micke" → "Mikael Ek"). Finns eleven redan uppdateras hen, och andras önskemål med smeknamnet kopplas rätt.',
+      'Det rättade namnet sparas som smeknamn i klassen (om <i>Kom ihåg mina val</i> är ikryssat), så nästa import känner igen det.',
+      '<b>Antal önskemål per elev</b> kan ändras direkt i importfönstret. Appen visar hur många som önskat fler än det tillåtna.'
+    ] },
     { v: '1.10.1', date: '2026-11-19', items: [
       'Eleverna i <b>Att reda ut</b> ligger kvar när du ändrar något, så att du ser resultatet. Lösta namn får en grön bock och visar ditt val. Tryck <b>✓ Klar</b> för att fälla ihop eleven (<i>Visa igen</i> öppnar den).',
       'Väljarna för önskemål, "inte med" och plats visar <b>det eleven skrev</b> högst upp – både vid importen och i klasslistan.'

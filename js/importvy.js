@@ -15,7 +15,7 @@ window.ImportUI = (() => {
   function open(src) {
     const { klass, ui } = B();
     const k = klass(ui.classId);
-    sess = { source: src.source || 'text', resolutions: {}, addNames: {}, review: {}, edits: {}, pinned: {}, done: {}, remember: ui.rememberAlias !== false, idCache: {}, mode: 'this', pickGroup: null, ranked: false };
+    sess = { source: src.source || 'text', resolutions: {}, addNames: {}, review: {}, edits: {}, pinned: {}, done: {}, renames: {}, maxW: {}, remember: ui.rememberAlias !== false, idCache: {}, mode: 'this', pickGroup: null, ranked: false };
     if (src.rows) {
       sess.kind = 'table';
       sess.rows = src.rows.filter(r => (r || []).some(c => String(c ?? '').trim()));
@@ -78,7 +78,7 @@ window.ImportUI = (() => {
     sess.scroll = [m.scrollTop, form ? form.scrollTop : 0];
     const v = draftStudent(t, it);
     const ctx = {
-      klass: { students: allStudents(t), maxWishes: t.klass.maxWishes ?? 3 },
+      klass: { students: allStudents(t), maxWishes: t.maxWishes },
       student: v,
       answer: it.entry.answer,
       save: () => {
@@ -134,7 +134,11 @@ window.ImportUI = (() => {
     let entries = sess.kind === 'table'
       ? I().entriesFromTable(sess.rows, sess.mapping, sess.hasHeader, { ranked: sess.ranked, multiRanked: sess.ranked })
       : sess.lines;
-    entries.forEach(e => { e.name = niceName(e.name); });
+    // Läraren kan rätta namnet på en rad (t.ex. när eleven skrivit sitt smeknamn).
+    entries.forEach(e => {
+      if (!e.origName) e.origName = niceName(e.name);
+      e.name = sess.renames[I().nameKey(e.origName)] || e.origName;
+    });
     sess.entries = entries;
     sess.groups = I().groupByClass(entries);
     sess.hasClassCol = entries.some(e => e.klass);
@@ -170,9 +174,20 @@ window.ImportUI = (() => {
           t.entries = t.entries.concat([{ name: niceName(tok), line: '–', raw: '', problems: [] }]);
         }
       });
-      t.plan = I().plan(t.klass, t.entries, key => sess.idCache[t.tid + '|' + key] || (sess.idCache[t.tid + '|' + key] = uid()), res);
+      const idOf = key => sess.idCache[t.tid + '|' + key] || (sess.idCache[t.tid + '|' + key] = uid());
+      // Rättade namn: det eleven skrev räknas som smeknamn, så att andras önskemål med samma namn hittar rätt.
+      const aliases = Object.assign({}, t.klass.aliases || {});
+      const known = I().matcher(t.klass.students, t.klass.aliases || {});
+      t.entries.forEach(e => {
+        if (!e.origName || e.origName === e.name) return;
+        const hit = known.one(e.name);
+        aliases[I().nameKey(e.origName)] = hit && hit.ids.length === 1 ? hit.ids[0] : idOf(I().nameKey(e.name));
+      });
+      t.maxWishes = sess.maxW[t.tid] ?? t.klass.maxWishes ?? 3;
+      const planK = Object.assign({}, t.klass, { aliases, maxWishes: t.maxWishes });
+      t.plan = I().plan(planK, t.entries, idOf, res);
       t.plan.items.forEach(it => {
-        const rk = t.tid + '§' + I().nameKey(it.entry.name);
+        const rk = t.tid + '§' + I().nameKey(it.entry.origName || it.entry.name);
         it.reviewKey = rk;
         it.review = rk in sess.review ? sess.review[rk] : !!it.entry.uncertain;
       });
@@ -240,6 +255,14 @@ window.ImportUI = (() => {
         ${sess.mode === 'this' && sess.skipped ? `<p class="small muted">${sess.skipped} ${sess.skipped === 1 ? 'rad' : 'rader'} från andra klasser hoppas över.</p>` : ''}
       </div>`;
     }
+
+    // --- Antal önskemål per elev ---
+    const maxHtml = `<div class="imp-sec maxsec">${T.map(t => {
+      const over = t.plan.items.filter(it => (it.entry.wishes || []).length > t.maxWishes).length;
+      return `<div class="maxrow"><label class="small">Antal namngivna önskemål per elev${T.length > 1 ? ` i <b>${esc(t.klass.name)}</b>` : ''}
+        <input type="number" min="0" max="10" class="numin" data-imp-max="${esc(t.tid)}" value="${t.maxWishes}"></label>
+        ${over ? `<span class="small warn-text">${over} ${over === 1 ? 'elev önskar' : 'elever önskar'} fler – bara de ${t.maxWishes} första tas med. Höj siffran om alla ska med.</span>` : '<span class="small muted">Ändras även för klassen när du importerar.</span>'}</div>`;
+    }).join('')}</div>`;
 
     // --- Rangordning ---
     const anyMulti = T.some(t => t.plan.items.some(it => (it.entry.wishes || []).length > 1));
@@ -330,7 +353,9 @@ window.ImportUI = (() => {
         const e = it.entry;
         const unr = t.plan.unresolved.filter(u => u.whoItem === it);
         return `<tr class="${it.review ? 'review' : e.problems.length || unr.length ? 'warn' : ''}">
-          <td><b>${esc(e.name)}</b> ${it.isNew ? '<span class="tag">ny</span>' : `<span class="tag upd" title="Finns redan som ${esc(it.student.name)}">uppdateras</span>`}</td>
+          <td class="namecell"><input class="sname imp-name" data-imp-rename="${esc(I().nameKey(e.origName || e.name))}" value="${esc(e.name)}" title="Rätta namnet – t.ex. om eleven skrivit sitt smeknamn" aria-label="Namn">
+            ${e.origName && e.origName !== e.name ? `<div class="small muted">eleven skrev <i>${esc(e.origName)}</i> · <button type="button" class="linkbtn" data-imp-unrename="${esc(I().nameKey(e.origName))}">ångra</button></div>` : ''}
+            ${it.isNew ? '<span class="tag">ny</span>' : `<span class="tag upd" title="Finns redan som ${esc(it.student.name)}">uppdateras</span>`}</td>
           <td>${genderBtns(it)}</td>
           <td>${edBtn(it, 'wishes', wishInner(t, it))}</td>
           <td>${edBtn(it, 'avoid', avoidInner(t, it))}</td>
@@ -342,7 +367,7 @@ window.ImportUI = (() => {
     m.innerHTML = `<form method="dialog" class="modal import-preview">
       <h3>Förhandsgranska import</h3>
       <p class="small">${sess.source === 'text' ? 'Från textrutan' : 'Från <b>' + esc(sess.source) + '</b>'}: <b>${nItems}</b> elever${T.length > 1 ? ` i <b>${T.length}</b> klasser` : ''} – ${nNew} nya, ${nItems - nNew} som redan finns och uppdateras.${nUnres ? ` <span class="bad-text">${nUnres} namn att reda ut.</span>` : ''}${nReview ? ` <span class="warn-text">${nReview} markerade att granska senare.</span>` : ''}</p>
-      ${cols}${classes}${ranked}${simHtml}${unresHtml}
+      ${cols}${classes}${maxHtml}${ranked}${simHtml}${unresHtml}
       ${probs.length ? `<div class="gbox warn"><b>Kontrollera ${probs.length} ${probs.length === 1 ? 'sak' : 'saker'}</b><ul class="small">${probs.map(x => `<li>${x}</li>`).join('')}</ul></div>` : ''}
       <div class="table-wrap preview-table"><table class="list-table"><thead><tr><th>Namn</th><th>Kön</th><th>Vill sitta med</th><th>Ska inte sitta med</th><th>Plats i rummet</th>${anyAnswer ? '<th>Eleven skrev</th>' : ''}<th></th></tr></thead><tbody>${rowsHtml || `<tr><td colspan="${ncol}" class="muted">Inga elever att importera – kontrollera kolumnerna.</td></tr>`}</tbody></table></div>
       <p class="small muted">Klicka på kön, önskemål, "inte med" eller plats för att ändra direkt – precis som i klasslistan. Ändrade rutor får en blå kant.</p>
@@ -363,10 +388,18 @@ window.ImportUI = (() => {
       <option value="skip" ${current === 'skip' ? 'selected' : ''}>Hoppa över (inget namn)</option></select>`.replace('<option value="add">', `<option value="add" ${current === 'add' ? 'selected' : ''}>`);
   }
 
+  function rename(key, value) {
+    const v = niceName(String(value || '').trim().replace(/\s+/g, ' '));
+    if (!v || I().nameKey(v) === key) delete sess.renames[key]; else sess.renames[key] = v;
+    compute(); draw();
+  }
+
   function onModalChange(e) {
     const t = e.target;
     if (!sess) return;
     if (t.matches('[data-imp-col], [data-imp-header], [name=impmode], [data-imp-group]')) { sess.pinned = {}; sess.done = {}; }
+    if (t.matches('[data-imp-max]')) { const n = Math.max(0, Math.min(10, parseInt(t.value, 10) || 0)); sess.maxW[t.dataset.impMax] = n; compute(); draw(); return; }
+    if (t.matches('[data-imp-rename]')) { rename(t.dataset.impRename, t.value); return; }
     if (t.matches('[data-imp-col]')) { sess.mapping[+t.dataset.impCol] = t.value; sess.guessed = 'manual'; rememberMapping(); compute(); draw(); return; }
     if (t.matches('[data-imp-review]')) { sess.review[t.dataset.impReview] = t.checked; compute(); draw(); return; }
     if (t.matches('[data-imp-header]')) {
@@ -393,6 +426,8 @@ window.ImportUI = (() => {
 
   function onModalClick(e) {
     if (!sess) return;
+    const ur = e.target.closest('[data-imp-unrename]');
+    if (ur) { rename(ur.dataset.impUnrename, ''); return; }
     const dn = e.target.closest('[data-imp-done]');
     if (dn) { const rk = dn.dataset.impDone; if (sess.done[rk]) delete sess.done[rk]; else sess.done[rk] = true; draw(); return; }
     const ed = e.target.closest('[data-imp-edit]');
@@ -413,7 +448,13 @@ window.ImportUI = (() => {
     const created = [];
     sess.targets.forEach(t => {
       if (t.isNew) { S.classes.push(t.klass); created.push(t.klass.name); }
+      if (sess.maxW[t.tid] !== undefined) t.klass.maxWishes = sess.maxW[t.tid];
       I().apply(t.klass, t.plan, sess.resolutions[t.tid], sess.remember);
+      // Rättade namn sparas som smeknamn i klassen (om "Kom ihåg" är ikryssat).
+      if (sess.remember) t.plan.items.forEach(it => {
+        const o = it.entry.origName;
+        if (o && I().nameKey(o) !== I().nameKey(it.student.name)) { t.klass.aliases = t.klass.aliases || {}; t.klass.aliases[I().nameKey(o)] = it.student.id; }
+      });
       autoResolve(t.klass);
       nNew += t.plan.items.filter(i => i.isNew).length;
       nUpd += t.plan.items.filter(i => !i.isNew).length;

@@ -555,7 +555,7 @@ window.Import = (() => {
       const resolve = (names, kind) => {
         const ids = [];
         names.forEach((nm, rank) => {
-          const rk = resKey(e.name, kind, nm);
+          const rk = resKey(e.origName || e.name, kind, nm);
           const r = resolutions[rk];
           let got = [];
           if (r === 'skip') return;
