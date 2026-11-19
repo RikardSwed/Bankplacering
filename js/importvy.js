@@ -77,10 +77,19 @@ window.ImportUI = (() => {
     const form = m.querySelector('.import-preview');
     sess.scroll = [m.scrollTop, form ? form.scrollTop : 0];
     const v = draftStudent(t, it);
+    const removed = new Set();
     const ctx = {
       klass: { students: allStudents(t), maxWishes: t.maxWishes },
       student: v,
       answer: it.entry.answer,
+      pending: () => t.plan.unresolved.filter(u => u.whoItem === it && u.kind === (kind === 'avoid' ? 'avoid' : 'wish') && !removed.has(u.key))
+        .map(u => ({ key: u.key, token: u.token, cands: (u.candidates || []).map(c => c.id) })),
+      resolvePending: (key, id) => {
+        removed.add(key);
+        const r = sess.resolutions[t.tid] || (sess.resolutions[t.tid] = {});
+        r[key] = id || 'skip';
+        if (id) ctx.save();
+      },
       save: () => {
         const ed = sess.edits[rk] || (sess.edits[rk] = {});
         if (kind === 'wishes') { ed.wish = { wishes: v.wishes.slice() }; WISH_FIELDS.forEach(x => { ed.wish[x] = !!v[x]; }); }
@@ -114,8 +123,7 @@ window.ImportUI = (() => {
       if ('pos' in ed) { e.pos = ed.pos; it.edited.pos = true; }
       if ('gender' in ed) { e.gender = ed.gender; it.edited.gender = true; }
     });
-    // Har läraren själv valt önskemålen tas namnen som inte gick att koppla bort.
-    t.plan.unresolved = t.plan.unresolved.filter(u => !((u.kind === 'wish' && u.whoItem.edited.wish) || (u.kind === 'avoid' && u.whoItem.edited.avoid)));
+    // Gula namn (att reda ut) ligger kvar tills läraren valt vem som menas eller tagit bort dem.
   }
 
   function mapKey() {
@@ -316,10 +324,9 @@ window.ImportUI = (() => {
     const nDone = pinnedItems.filter(x => sess.done[x.it.reviewKey]).length;
     const tokRow = (t, it, tk) => {
       const res = (sess.resolutions[tk.tid] || {})[tk.key] || '';
-      const manual = tk.kind === 'wish' ? it.edited.wish : it.edited.avoid;
       const open = t.plan.unresolved.some(u => u.key === tk.key);
       return `<div class="unres ${open ? '' : 'ok'}"><span>${open ? '' : '<span class="good-text">✓</span> '}${tk.kind === 'wish' ? 'Vill sitta med' : 'Ska inte sitta med'} »${esc(tk.token)}«</span>
-        ${manual ? '<span class="small muted">du har valt själv nedan</span>' : resSelect(`${tk.tid}§${tk.key}`, tk.candidates, allStudents(t), id => nameIn(t, id), res, tk.token)}</div>`;
+        ${resSelect(`${tk.tid}§${tk.key}`, tk.candidates, allStudents(t), id => nameIn(t, id), res, tk.token)}</div>`;
     };
     const unresHtml = pinnedItems.length ? `<div class="imp-sec ${nUnresAll ? 'warnsec' : 'oksec'}"><div class="small"><b>Att reda ut ${nUnresAll ? `(${nUnresAll} kvar)` : '– allt kopplat'}</b>${pinnedItems.length > 1 ? ` <span class="muted">· ${nDone} av ${pinnedItems.length} elever klara</span>` : ''}</div>
       <p class="small muted">Namn som inte gick att koppla till en elev – stavfel, smeknamn eller sådant som inte är ett namn. Välj vem som menas i rullistan, eller klicka på önskemålen, "inte med" eller platsen för att ändra själv. Eleven ligger kvar här så att du ser resultatet – tryck <b>✓ Klar</b> när allt ser rätt ut. Det du inte bestämmer hamnar i listan <i>Att reda ut</i> i klassen.</p>
@@ -394,6 +401,26 @@ window.ImportUI = (() => {
       <option value="skip" ${current === 'skip' ? 'selected' : ''}>Hoppa över (inget namn)</option></select>`.replace('<option value="add">', `<option value="add" ${current === 'add' ? 'selected' : ''}>`);
   }
 
+  // Ett gult namn kopplas till en elev ('add' = ny elev, 'skip' = ta bort, '' = bestäm senare).
+  function setResolution(tid, key, value) {
+    const r = sess.resolutions[tid] || (sess.resolutions[tid] = {});
+    let pinRk = null, pin = null;
+    Object.entries(sess.pinned).forEach(([rk, o]) => { if (o[key]) { pinRk = rk; pin = o[key]; } });
+    const u = sess.targets.flatMap(x => x.plan.unresolved).find(x => x.key === key);
+    const token = (pin || u || {}).token;
+    if (value === 'add' && token) sess.addNames[tid + '§' + key] = token;
+    if (value) r[key] = value; else delete r[key];
+    // Har läraren redan valt själv i väljaren läggs den kopplade eleven till där också.
+    const rk = pinRk || (u && u.whoItem.reviewKey);
+    const kind = (pin || u || {}).kind;
+    const ed = rk && sess.edits[rk];
+    if (ed && value && value !== 'skip') {
+      const id = value === 'add' ? (sess.idCache[tid + '|' + I().nameKey(niceName(token))] || (sess.idCache[tid + '|' + I().nameKey(niceName(token))] = B().uid())) : value;
+      if (kind === 'wish' && ed.wish && !ed.wish.wishes.includes(id)) ed.wish.wishes.push(id);
+      if (kind === 'avoid' && ed.avoid && !ed.avoid.includes(id)) ed.avoid.push(id);
+    }
+  }
+
   function rename(key, value) {
     const v = niceName(String(value || '').trim().replace(/\s+/g, ' '));
     if (!v || I().nameKey(v) === key) delete sess.renames[key]; else sess.renames[key] = v;
@@ -421,11 +448,7 @@ window.ImportUI = (() => {
     if (t.matches('[data-imp-res]')) {
       const [tid, key] = t.dataset.impRes.split('§');
       const r = sess.resolutions[tid] || (sess.resolutions[tid] = {});
-      if (t.value === 'add') {
-        const u = sess.targets.flatMap(x => x.plan.unresolved).find(x => x.key === key);
-        if (u) sess.addNames[tid + '§' + key] = u.token;
-      }
-      if (t.value) r[key] = t.value; else delete r[key];
+      setResolution(tid, key, t.value);
       compute(); draw();
     }
   }

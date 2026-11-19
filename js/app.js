@@ -6,8 +6,12 @@
 
   // ---------- Version och uppdateringar ----------
   // Höj APP_VERSION och version.json tillsammans vid varje ny version.
-  const APP_VERSION = '1.11.1';
+  const APP_VERSION = '1.11.2';
   const CHANGELOG = [
+    { v: '1.11.2', date: '2026-11-19', items: [
+      '<b>Gula namn</b> (namn appen inte kunde koppla) visas nu också i väljaren när du klickar på önskemålen eller "inte med". Där kan du koppla dem till rätt elev med ett klick (<i>= Mikael</i>) eller ta bort dem (<i>× Ta bort</i>).',
+      'Gula namn försvinner inte längre av sig själva när du ändrar önskemålen – de ligger kvar tills du kopplat eller tagit bort dem. Samma sak går att göra i klasslistan efter importen.'
+    ] },
     { v: '1.11.1', date: '2026-11-19', items: [
       'Många namn utan kommatecken ("maja ella hugo alva", "maja lind ella hugo") delas nu upp ord för ord. Förut kunde ett enda okänt ord göra att inget alls kopplades.',
       'Importlistan har ingen egen rullning längre – hela listan syns i importfönstret.',
@@ -658,6 +662,18 @@ Saga, t, med: Alva; en tjej</pre>
     const save = ctx ? ctx.save : saveState;
     const note = ctx ? ctx.answer : s.answer && s.answer.text;
     const isW = kind === 'wishes';
+    // Gula namn: det eleven skrev som appen inte kunde koppla till en elev
+    const pending = ctx ? ctx.pending : () => (k.unresolved || []).filter(u => u.from === sid && u.kind === (isW ? 'wish' : 'avoid'))
+      .map(u => ({ key: u.id, token: u.token, cands: u.candidates || [] }));
+    const resolvePending = ctx ? ctx.resolvePending : (key, id) => {
+      const u = (k.unresolved || []).find(x => x.id === key);
+      k.unresolved = (k.unresolved || []).filter(x => x.id !== key);
+      if (u && id) {
+        const st = k.students.find(x => x.id === id);
+        if (ui.rememberAlias !== false && st && window.Import.nameKey(st.name) !== window.Import.nameKey(u.token)) { k.aliases = k.aliases || {}; k.aliases[window.Import.nameKey(u.token)] = id; }
+      }
+      save();
+    };
     const max = isW ? (k.maxWishes ?? 3) : Infinity;
     const m = $('#modal');
     m.onclick = null; m.onchange = null; m.oninput = null;
@@ -670,6 +686,7 @@ Saga, t, med: Alva; en tjej</pre>
     m.innerHTML = `<form method="dialog" class="modal picker">
       <h3>${isW ? `Vem vill ${esc(s.name)} sitta med?` : `Vem ska ${esc(s.name)} inte sitta med?`}</h3>
       ${note ? `<div class="pk-note">💬 ${esc(s.name)} skrev: <q>${esc(note)}</q></div>` : ''}
+      <div id="pk-pending"></div>
       <div id="pk-general"></div>
       <div class="pk-tools">
         <input type="search" id="pk-search" placeholder="Sök namn…" autocomplete="off">
@@ -691,6 +708,13 @@ Saga, t, med: Alva; en tjej</pre>
       const strict = isW && Lottning.wishStrictOf(s);
       const ranked = isW && !!s.wishRanked;
       const nm = id => k.students.find(x => x.id === id)?.name || '?';
+      const pl = pending();
+      $('#pk-pending', m).innerHTML = !pl.length ? '' : `<div class="pk-pending">
+        <b class="small">Att reda ut</b> <span class="small muted">– namn appen inte kunde koppla till en elev. Klicka på rätt elev (= …), eller välj i listan nedan och ta bort det gula namnet med ×. Är det inget namn, ta bort det.</span>
+        ${pl.map(u => `<div class="pk-pend-row"><span class="chip sm unk">${esc(u.token)} ?</span>
+          ${u.cands.filter(id => id !== sid && k.students.some(x => x.id === id)).slice(0, 3).map(id => `<button type="button" class="btn small-btn" data-pend-use="${esc(u.key)}" data-pend-id="${id}">= ${esc(nm(id))}</button>`).join('')}
+          <button type="button" class="btn small-btn ghost" data-pend-del="${esc(u.key)}" title="Ta bort det gula namnet">× Ta bort</button></div>`).join('')}
+      </div>`;
       $('#pk-general', m).innerHTML = !isW ? '' : `
         <div class="genbox">
           <b class="small">Allmänna val</b>
@@ -734,6 +758,14 @@ Saga, t, med: Alva; en tjej</pre>
     };
     m.oninput = e => { if (e.target.id === 'pk-search') { query = e.target.value; filter(); } };
     m.onclick = e => {
+      const pu = e.target.closest('[data-pend-use]'), pdl = e.target.closest('[data-pend-del]');
+      if (pu) {
+        const id = pu.dataset.pendId;
+        const sel = (s[kind] || []).slice();
+        if (!sel.includes(id)) { if (sel.length >= max) { toast(`Max ${max} önskemål – ta bort någon först.`); return; } sel.push(id); s[kind] = sel; }
+        resolvePending(pu.dataset.pendUse, id); save(); draw(); return;
+      }
+      if (pdl) { resolvePending(pdl.dataset.pendDel, null); draw(); return; }
       const so = e.target.closest('[data-pksort]');
       if (so) { ui.pickSort = so.dataset.pksort; saveUi(); draw(); return; }
       const up = e.target.closest('[data-rank-up]'), dn = e.target.closest('[data-rank-down]');
