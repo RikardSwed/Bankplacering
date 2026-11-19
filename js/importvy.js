@@ -15,7 +15,7 @@ window.ImportUI = (() => {
   function open(src) {
     const { klass, ui } = B();
     const k = klass(ui.classId);
-    sess = { source: src.source || 'text', resolutions: {}, addNames: {}, review: {}, edits: {}, remember: ui.rememberAlias !== false, idCache: {}, mode: 'this', pickGroup: null, ranked: false };
+    sess = { source: src.source || 'text', resolutions: {}, addNames: {}, review: {}, edits: {}, pinned: {}, done: {}, remember: ui.rememberAlias !== false, idCache: {}, mode: 'this', pickGroup: null, ranked: false };
     if (src.rows) {
       sess.kind = 'table';
       sess.rows = src.rows.filter(r => (r || []).some(c => String(c ?? '').trim()));
@@ -80,6 +80,7 @@ window.ImportUI = (() => {
     const ctx = {
       klass: { students: allStudents(t), maxWishes: t.klass.maxWishes ?? 3 },
       student: v,
+      answer: it.entry.answer,
       save: () => {
         const ed = sess.edits[rk] || (sess.edits[rk] = {});
         if (kind === 'wishes') { ed.wish = { wishes: v.wishes.slice() }; WISH_FIELDS.forEach(x => { ed.wish[x] = !!v[x]; }); }
@@ -174,6 +175,12 @@ window.ImportUI = (() => {
         const rk = t.tid + '§' + I().nameKey(it.entry.name);
         it.reviewKey = rk;
         it.review = rk in sess.review ? sess.review[rk] : !!it.entry.uncertain;
+      });
+      // Elever som haft något att reda ut stannar kvar i rutan tills läraren trycker Klar.
+      t.plan.unresolved.forEach(u => {
+        const rk = u.whoItem.reviewKey;
+        const pin = sess.pinned[rk] || (sess.pinned[rk] = {});
+        if (!pin[u.key]) pin[u.key] = { tid: t.tid, key: u.key, kind: u.kind, token: u.token, candidates: u.candidates };
       });
       applyEdits(t);
     });
@@ -278,30 +285,39 @@ window.ImportUI = (() => {
     };
 
     // --- Att reda ut: en ruta per elev, med det eleven skrev och alla val ---
-    const unres = [];
-    T.forEach(t => t.plan.unresolved.forEach(u => unres.push({ t, u })));
-    const byStudent = [];
-    unres.forEach(x => {
-      let g = byStudent.find(b => b.it === x.u.whoItem);
-      if (!g) byStudent.push(g = { t: x.t, it: x.u.whoItem, list: [] });
-      g.list.push(x.u);
-    });
+    // Rutan ligger kvar när något ändras, så att läraren ser resultatet. Den fälls ihop först med "Klar".
+    const nUnresAll = T.reduce((a, t) => a + t.plan.unresolved.length, 0);
     const resolvedCount = T.reduce((a, t) => a + Object.keys(sess.resolutions[t.tid]).filter(x => !x.startsWith('self|')).length, 0);
-    const unresHtml = unres.length || resolvedCount ? `<div class="imp-sec warnsec"><b class="small">Att reda ut (${unres.length})</b>
-      <p class="small muted">Namn som inte gick att koppla till en elev – stavfel, smeknamn eller sådant som inte är ett namn. Välj vem som menas i rullistan, eller klicka på önskemålen, "inte med" eller platsen för att ändra själv. Det du väljer syns direkt i listan längre ner. Det du inte bestämmer nu hamnar i listan <i>Att reda ut</i> i klassen.</p>
-      ${byStudent.map(({ t, it, list }) => `<div class="ru-card">
+    const pinnedItems = [];
+    T.forEach(t => t.plan.items.forEach(it => { if (sess.pinned[it.reviewKey]) pinnedItems.push({ t, it, toks: Object.values(sess.pinned[it.reviewKey]) }); }));
+    const nDone = pinnedItems.filter(x => sess.done[x.it.reviewKey]).length;
+    const tokRow = (t, it, tk) => {
+      const res = (sess.resolutions[tk.tid] || {})[tk.key] || '';
+      const manual = tk.kind === 'wish' ? it.edited.wish : it.edited.avoid;
+      const open = t.plan.unresolved.some(u => u.key === tk.key);
+      return `<div class="unres ${open ? '' : 'ok'}"><span>${open ? '' : '<span class="good-text">✓</span> '}${tk.kind === 'wish' ? 'Vill sitta med' : 'Ska inte sitta med'} »${esc(tk.token)}«</span>
+        ${manual ? '<span class="small muted">du har valt själv nedan</span>' : resSelect(`${tk.tid}§${tk.key}`, tk.candidates, allStudents(t), id => nameIn(t, id), res, tk.token)}</div>`;
+    };
+    const unresHtml = pinnedItems.length ? `<div class="imp-sec ${nUnresAll ? 'warnsec' : 'oksec'}"><div class="small"><b>Att reda ut ${nUnresAll ? `(${nUnresAll} kvar)` : '– allt kopplat'}</b>${pinnedItems.length > 1 ? ` <span class="muted">· ${nDone} av ${pinnedItems.length} elever klara</span>` : ''}</div>
+      <p class="small muted">Namn som inte gick att koppla till en elev – stavfel, smeknamn eller sådant som inte är ett namn. Välj vem som menas i rullistan, eller klicka på önskemålen, "inte med" eller platsen för att ändra själv. Eleven ligger kvar här så att du ser resultatet – tryck <b>✓ Klar</b> när allt ser rätt ut. Det du inte bestämmer hamnar i listan <i>Att reda ut</i> i klassen.</p>
+      ${pinnedItems.map(({ t, it, toks }) => {
+        const left = t.plan.unresolved.filter(u => u.whoItem === it).length;
+        if (sess.done[it.reviewKey]) return `<div class="ru-card done"><div class="ru-left"><span class="good-text">✓</span> <b>${esc(it.entry.name)}</b> <span class="small muted">klar${left ? ` · ${left} sparas till senare` : ''}</span></div>
+          <div class="ru-right ru-sum"><span class="small">${wishInner(t, it)}</span><button type="button" class="linkbtn" data-imp-done="${esc(it.reviewKey)}">Visa igen</button></div></div>`;
+        return `<div class="ru-card ${left ? '' : 'allok'}">
         <div class="ru-left"><b>${esc(it.entry.name)}</b>${T.length > 1 ? ` <span class="muted small">(${esc(t.klass.name)})</span>` : ''}
           ${it.entry.answer ? `<div class="ru-ans">Eleven skrev: <q>${esc(it.entry.answer)}</q></div>` : ''}</div>
         <div class="ru-right">
-          ${list.map(u => `<div class="unres"><span>${u.kind === 'wish' ? 'Vill sitta med' : 'Ska inte sitta med'} »${esc(u.token)}«</span>
-            ${resSelect(`${t.tid}§${u.key}`, u.candidates, allStudents(t), id => nameIn(t, id), '', u.token)}</div>`).join('')}
+          ${toks.map(tk => tokRow(t, it, tk)).join('')}
           <div class="ru-edit">
             <div><span class="small muted">Vill sitta med</span>${edBtn(it, 'wishes', wishInner(t, it))}</div>
             <div><span class="small muted">Ska inte sitta med</span>${edBtn(it, 'avoid', avoidInner(t, it))}</div>
             <div><span class="small muted">Plats</span>${edBtn(it, 'pos', posInner(it), 'posbox')}</div>
+            <div class="ru-done"><button type="button" class="btn small-btn ${left ? '' : 'primary'}" data-imp-done="${esc(it.reviewKey)}" title="${left ? 'Det som inte är bestämt sparas i listan Att reda ut i klassen' : 'Allt ser rätt ut'}">✓ Klar</button></div>
           </div>
-        </div></div>`).join('')}
-      ${resolvedCount ? `<p class="small good-text">✓ ${resolvedCount} redda ut. <button type="button" class="linkbtn" data-imp-reset>Ångra mina val</button></p>` : ''}
+        </div></div>`;
+      }).join('')}
+      ${resolvedCount ? `<p class="small good-text">✓ ${resolvedCount} namn redda ut. <button type="button" class="linkbtn" data-imp-reset>Ångra mina val</button></p>` : ''}
       <label class="check small"><input type="checkbox" data-imp-remember ${sess.remember ? 'checked' : ''}> Kom ihåg mina val (t.ex. att "micke" = Mikael) till nästa import</label>
     </div>` : '';
 
@@ -344,12 +360,13 @@ window.ImportUI = (() => {
       ${cand.length ? `<optgroup label="Förslag">${cand.map(c => `<option value="${c.id}" ${current === c.id ? 'selected' : ''}>${esc(nameOf(c.id))}${c.why ? ` (${c.why})` : ''}</option>`).join('')}</optgroup>` : ''}
       <optgroup label="Alla elever">${students.map(s => `<option value="${s.id}" ${current === s.id && !cand.some(c => c.id === s.id) ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</optgroup>
       ${token ? `<option value="add">Ny elev: »${esc(niceName(token))}« (har inte svarat själv)</option>` : ''}
-      <option value="skip" ${current === 'skip' ? 'selected' : ''}>Hoppa över (inget namn)</option></select>`;
+      <option value="skip" ${current === 'skip' ? 'selected' : ''}>Hoppa över (inget namn)</option></select>`.replace('<option value="add">', `<option value="add" ${current === 'add' ? 'selected' : ''}>`);
   }
 
   function onModalChange(e) {
     const t = e.target;
     if (!sess) return;
+    if (t.matches('[data-imp-col], [data-imp-header], [name=impmode], [data-imp-group]')) { sess.pinned = {}; sess.done = {}; }
     if (t.matches('[data-imp-col]')) { sess.mapping[+t.dataset.impCol] = t.value; sess.guessed = 'manual'; rememberMapping(); compute(); draw(); return; }
     if (t.matches('[data-imp-review]')) { sess.review[t.dataset.impReview] = t.checked; compute(); draw(); return; }
     if (t.matches('[data-imp-header]')) {
@@ -376,6 +393,8 @@ window.ImportUI = (() => {
 
   function onModalClick(e) {
     if (!sess) return;
+    const dn = e.target.closest('[data-imp-done]');
+    if (dn) { const rk = dn.dataset.impDone; if (sess.done[rk]) delete sess.done[rk]; else sess.done[rk] = true; draw(); return; }
     const ed = e.target.closest('[data-imp-edit]');
     if (ed) { openEdit(ed.dataset.impItem, ed.dataset.impEdit); return; }
     const gb = e.target.closest('[data-imp-gender]');

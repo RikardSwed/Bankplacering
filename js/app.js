@@ -6,8 +6,12 @@
 
   // ---------- Version och uppdateringar ----------
   // Höj APP_VERSION och version.json tillsammans vid varje ny version.
-  const APP_VERSION = '1.10.0';
+  const APP_VERSION = '1.10.1';
   const CHANGELOG = [
+    { v: '1.10.1', date: '2026-11-19', items: [
+      'Eleverna i <b>Att reda ut</b> ligger kvar när du ändrar något, så att du ser resultatet. Lösta namn får en grön bock och visar ditt val. Tryck <b>✓ Klar</b> för att fälla ihop eleven (<i>Visa igen</i> öppnar den).',
+      'Väljarna för önskemål, "inte med" och plats visar <b>det eleven skrev</b> högst upp – både vid importen och i klasslistan.'
+    ] },
     { v: '1.10.0', date: '2026-11-19', items: [
       '<b>Ändra direkt i förhandsgranskningen</b> vid import: klicka på kön, önskemål, "inte med" eller plats – samma väljare som i klasslistan. Ändrade rutor får en blå kant.',
       '<b>Att reda ut</b> visar en ruta per elev med det eleven skrev, rullistan för varje namn och knappar för önskemål, "inte med" och plats. Det du väljer syns direkt i listan nedanför.',
@@ -642,6 +646,7 @@ Saga, t, med: Alva; en tjej</pre>
     const s = ctx ? ctx.student : k.students.find(x => x.id === sid);
     if (!s) return;
     const save = ctx ? ctx.save : saveState;
+    const note = ctx ? ctx.answer : s.answer && s.answer.text;
     const isW = kind === 'wishes';
     const max = isW ? (k.maxWishes ?? 3) : Infinity;
     const m = $('#modal');
@@ -654,6 +659,7 @@ Saga, t, med: Alva; en tjej</pre>
     // Skalet byggs en gång (så att sökrutan behåller fokus); delarna ritas om var för sig.
     m.innerHTML = `<form method="dialog" class="modal picker">
       <h3>${isW ? `Vem vill ${esc(s.name)} sitta med?` : `Vem ska ${esc(s.name)} inte sitta med?`}</h3>
+      ${note ? `<div class="pk-note">💬 ${esc(s.name)} skrev: <q>${esc(note)}</q></div>` : ''}
       <div id="pk-general"></div>
       <div class="pk-tools">
         <input type="search" id="pk-search" placeholder="Sök namn…" autocomplete="off">
@@ -764,6 +770,7 @@ Saga, t, med: Alva; en tjej</pre>
     const s = ctx ? ctx.student : k.students.find(x => x.id === sid);
     if (!s) return;
     const save = ctx ? ctx.save : saveState;
+    const note = ctx ? ctx.answer : s.answer && s.answer.text;
     const m = $('#modal');
     const setCells = cells => {
       if (!cells.length) { delete s.pos; return; }
@@ -773,6 +780,7 @@ Saga, t, med: Alva; en tjej</pre>
       const cells = posCells(s), strict = !!(s.pos && s.pos.strict);
       m.innerHTML = `<form method="dialog" class="modal">
         <h3>Var i klassrummet ska ${esc(s.name)} sitta?</h3>
+        ${note ? `<div class="pk-note">💬 ${esc(s.name)} skrev: <q>${esc(note)}</q></div>` : ''}
         <p class="muted small">Klicka i en eller flera rutor. Klicka på en rubrik för att välja en hel rad eller sida. Vänster och höger räknas som eleverna ser det, med ansiktet mot tavlan.</p>
         <div class="posgrid">
           <span></span><div class="board pboard">Tavla</div>

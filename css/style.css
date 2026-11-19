@@ -648,3 +648,11 @@ tr.review > td { background: #fff7e0; }
 .ru-edit { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; }
 .ru-edit > div { display: flex; flex-direction: column; gap: 2px; }
 @media (max-width: 700px) { .ru-card { grid-template-columns: 1fr; } }
+.pk-note { background: #fff8e6; border: 1px solid #f0dca8; border-radius: 8px; padding: 8px 10px; margin: 0 0 10px; font-size: 14px; }
+.pk-note q { font-style: italic; }
+.imp-sec.oksec { border-color: #bcdcbf; background: #f3faf3; }
+.ru-card.allok { background: #f3faf3; border-radius: 8px; padding: 10px 8px; }
+.ru-card.done { padding: 6px 0; align-items: center; }
+.ru-card.done .ru-sum { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ru-done { justify-content: flex-end; }
+.unres.ok > span:first-child { color: #555; }
