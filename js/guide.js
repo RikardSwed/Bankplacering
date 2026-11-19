@@ -6,7 +6,7 @@ window.Guide = (() => {
   'use strict';
 
   // Bildernas mått, så att sidan inte hoppar när bilderna laddas
-  const SIZES = {"import-elevsvar":[2320,644],"import-kolumner-gissade":[2320,424],"klass-att-granska":[1856,568],"data":[2448,438],"flytta-dialog":[1128,616],"flytta-info":[2448,186],"flytta-karta":[2448,1530],"gr-flaggor":[2380,782],"gr-grupper":[2388,774],"gr-historik":[2380,654],"gr-karta":[2380,1034],"gr-platser":[2448,402],"gr-resultat":[2448,704],"gr-schema":[2388,796],"gr-verktyg":[2388,188],"import-formular":[2408,2714],"klass-att-reda-ut":[1896,596],"klasser-import-forhand":[2408,1786],"klasser-import":[1888,1970],"klasser-lagg-till":[1888,632],"klasser-lista":[1896,1358],"klasser-onskemal":[1128,1738],"klasser-plats-rad":[1872,124],"klasser-plats-strikt":[1128,1030],"klasser-plats":[1128,1030],"klasser-rangordna":[1128,1964],"klasser-sitta-sjalv":[1128,1738],"klassrum-grupprum":[1888,512],"klassrum-mall":[1888,308],"klassrum-rita":[1896,1444],"klassrum-zoner":[1896,1130],"lottning-karta":[2448,1274],"lottning-kontroller":[2448,606],"lottning-rapport":[2448,438],"lottning-spara":[2448,176],"sparade":[2448,478],"uppdateringar":[1128,1538],"import-reda-ut-direkt":[2320,684],"import-ratta-namn":[2320,542]};
+  const SIZES = {"import-elevsvar":[2320,644],"import-kolumner-gissade":[2320,424],"klass-att-granska":[1856,568],"data":[2448,438],"flytta-dialog":[1128,616],"flytta-info":[2448,186],"flytta-karta":[2448,1530],"gr-flaggor":[2380,782],"gr-grupper":[2388,774],"gr-historik":[2380,654],"gr-karta":[2380,1034],"gr-platser":[2448,402],"gr-resultat":[2448,834],"gr-schema":[2388,796],"gr-verktyg":[2388,188],"import-formular":[2408,2886],"klass-att-reda-ut":[1896,596],"klasser-import-forhand":[2408,1996],"klasser-import":[1888,1970],"klasser-lagg-till":[1888,632],"klasser-lista":[1896,1358],"klasser-onskemal":[1128,1738],"klasser-plats-rad":[1872,124],"klasser-plats-strikt":[1128,1030],"klasser-plats":[1128,1030],"klasser-rangordna":[1128,2032],"klasser-sitta-sjalv":[1128,1738],"klassrum-grupprum":[1888,512],"klassrum-mall":[1888,308],"klassrum-rita":[1896,1444],"klassrum-zoner":[1896,1130],"lottning-karta":[2448,1274],"lottning-kontroller":[2448,606],"lottning-rapport":[2448,496],"lottning-spara":[2448,176],"sparade":[2448,478],"uppdateringar":[1128,1538],"import-reda-ut-direkt":[2320,684],"import-ratta-namn":[2320,542]};
   const fig = (file, caption) =>
     `<figure class="gfig ${(SIZES[file] || [9999])[0] < 1300 ? 'narrow' : ''}"><img src="img/guide/${file}.jpg" width="${(SIZES[file] || [0])[0]}" height="${(SIZES[file] || [0, 0])[1]}" alt="${caption.replace(/<[^>]+>/g, '').replace(/"/g, '&quot;')}" loading="lazy" data-zoom><figcaption>${caption}</figcaption></figure>`;
   const steps = items => `<ol class="gsteps">${items.map(i => `<li>${i}</li>`).join('')}</ol>`;
@@ -224,6 +224,11 @@ Noah, k, med!: en kille</pre>
         <p>Högst upp i förhandsgranskningen kan du ändra <b>Antal namngivna önskemål per elev</b>. Har någon önskat fler än det tillåtna visas det, och bara de första tas med tills du höjer siffran. Värdet sparas på klassen när du importerar.</p>
         <h3 id="g-granska">Elevens text och Granska senare</h3>
         <p>Det eleven skrev <b>sparas på eleven</b> och syns under namnet i klasslistan (💬). Bocka ur <i>Visa elevernas svar</i> om du vill dölja texterna.</p>
+        <div class="gbox"><b>Att reda ut eller Granska senare – vad är skillnaden?</b>
+          <ul>
+            <li><b>Att reda ut</b> är namn appen <i>inte kunde koppla</i> till en elev (stavfel, smeknamn). De måste bestämmas – direkt i importen eller senare i klassens lista.</li>
+            <li><b>Granska senare</b> är bara ett bokmärke för dig. Eleven importeras som vanligt, men hamnar också i listan <i>Att granska</i> så att du kan titta en gång till. Appen kryssar i den själv när den inte förstod allt eleven skrev (⚠).</li>
+          </ul></div>
         <p>Kryssa i <b>Granska senare</b> i förhandsgranskningen – eller klicka på 🏷 på en rad i klasslistan – för elever du vill titta närmare på. De samlas i rutan <b>Att granska</b> högst upp i klassen, med elevens text, appens tolkning och knappar för att ändra önskemål, "inte med" och plats. Tryck <b>✓ Klar</b> när du är nöjd.</p>
         ${fig('klass-att-granska', 'Att granska: elevens egen text, appens tolkning och knappar för att rätta.')}
         <h3 id="g-klasskolumn">Klasser – "7c" är samma som "7C"</h3>
@@ -474,6 +479,8 @@ Noah, k, med!: en kille</pre>
       id: 'g-faq', icon: '💡', title: 'Vanliga frågor', lead: 'Korta svar på sådant som brukar dyka upp.',
       body: () => `
         <dl class="gfaq">
+          <dt>En elev skrev många namn utan kommatecken – fungerar det?</dt>
+          <dd>Ja. "maja ella hugo alva" eller "maja lind ella hugo" delas upp ord för ord. Ord som inte är ett namn i klassen (t.ex. ett smeknamn) hamnar i <i>Att reda ut</i>, resten kopplas direkt. Har eleven önskat fler än klassen tillåter tas bara de första med – höj <i>Antal önskemål per elev</i> högst upp i importen.</dd>
           <dt>Måste formuläret fråga om kön?</dt>
           <dd>Nej. Saknas kön sätter du det med knapparna <i>Kille</i>/<i>Tjej</i> direkt i förhandsgranskningen eller i klasslistan efteråt. Finns en könskolumn (k/t, kille/tjej) läses den in.</dd>
           <dt>Jag klistrade in celler och klass och önskemål hamnade fel – vad gör jag?</dt>

@@ -663,3 +663,7 @@ tr.review > td { background: #fff7e0; }
 .maxrow .numin { width: 56px; padding: 4px 6px; }
 .import-preview .imp-name { border: 1px solid #e6dcc8; background: #fff; border-radius: 6px; padding: 4px 6px; }
 .import-preview .imp-name:focus { border-color: #5b8fd6; outline: none; }
+/* v1.11.1 – hela listan i samma fönster, förklaring */
+.import-preview .preview-table { max-height: none; overflow: visible; overflow-x: auto; }
+.import-preview .preview-table th { position: static; }
+.import-preview .legend { display: grid; gap: 6px; background: #faf7f0; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin: 6px 0 8px; color: #555; }

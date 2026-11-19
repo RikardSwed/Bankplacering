@@ -361,7 +361,9 @@ window.ImportUI = (() => {
           <td>${edBtn(it, 'avoid', avoidInner(t, it))}</td>
           <td>${edBtn(it, 'pos', posInner(it), 'posbox')}</td>
           ${anyAnswer ? `<td class="answer">${e.answer ? `<q>${esc(e.answer)}</q>` : '<span class="muted">–</span>'}${(e.notes || []).map(n => `<div class="small warn-text">⚠ ${esc(n)}</div>`).join('')}</td>` : ''}
-          <td class="rv"><label class="rvbox" title="Markera eleven så att du kan titta på hen senare under Klasser"><input type="checkbox" data-imp-review="${esc(it.reviewKey)}" ${it.review ? 'checked' : ''}> <span>Granska senare</span></label></td></tr>`;
+          <td class="rv"><label class="rvbox" title="Eleven hamnar i listan Att granska i klassen, med sin text – så kan du titta på hen efter importen"><input type="checkbox" data-imp-review="${esc(it.reviewKey)}" ${it.review ? 'checked' : ''}> <span>Granska senare</span></label>
+            ${!anyAnswer && (e.notes || []).length ? (e.notes || []).map(n => `<div class="small warn-text">⚠ ${esc(n)}</div>`).join('') : ''}
+            ${it.review && it.entry.uncertain && !(it.reviewKey in sess.review) ? '<div class="small muted">ikryssad av appen</div>' : ''}</td></tr>`;
       }).join('')).join('');
 
     m.innerHTML = `<form method="dialog" class="modal import-preview">
@@ -369,9 +371,13 @@ window.ImportUI = (() => {
       <p class="small">${sess.source === 'text' ? 'Från textrutan' : 'Från <b>' + esc(sess.source) + '</b>'}: <b>${nItems}</b> elever${T.length > 1 ? ` i <b>${T.length}</b> klasser` : ''} – ${nNew} nya, ${nItems - nNew} som redan finns och uppdateras.${nUnres ? ` <span class="bad-text">${nUnres} namn att reda ut.</span>` : ''}${nReview ? ` <span class="warn-text">${nReview} markerade att granska senare.</span>` : ''}</p>
       ${cols}${classes}${maxHtml}${ranked}${simHtml}${unresHtml}
       ${probs.length ? `<div class="gbox warn"><b>Kontrollera ${probs.length} ${probs.length === 1 ? 'sak' : 'saker'}</b><ul class="small">${probs.map(x => `<li>${x}</li>`).join('')}</ul></div>` : ''}
+      <div class="legend small">
+        <div><b class="bad-text">Att reda ut</b> (rutan ovanför) – namn appen <i>inte kunde koppla</i> till en elev. De måste bestämmas: nu, eller senare i klassens lista <i>Att reda ut</i>.</div>
+        <div><b class="warn-text">Granska senare</b> (kryssrutan i listan) – ett bokmärke för dig. Eleven hamnar i listan <i>Att granska</i> i klassen, med sin text, så att du kan titta en gång till efter importen. Appen kryssar i den själv när den inte förstod allt eleven skrev (⚠), t.ex. "vid fönstret". Allt i listan importeras ändå.</div>
+      </div>
       <div class="table-wrap preview-table"><table class="list-table"><thead><tr><th>Namn</th><th>Kön</th><th>Vill sitta med</th><th>Ska inte sitta med</th><th>Plats i rummet</th>${anyAnswer ? '<th>Eleven skrev</th>' : ''}<th></th></tr></thead><tbody>${rowsHtml || `<tr><td colspan="${ncol}" class="muted">Inga elever att importera – kontrollera kolumnerna.</td></tr>`}</tbody></table></div>
       <p class="small muted">Klicka på kön, önskemål, "inte med" eller plats för att ändra direkt – precis som i klasslistan. Ändrade rutor får en blå kant.</p>
-      ${anyAnswer ? '<p class="small muted">Jämför appens tolkning med det eleven skrev. Det som står under <i>Eleven skrev</i> sparas på eleven, så du kan se det i klasslistan även efteråt. Kryssa i <b>Granska senare</b> för elever du vill titta närmare på – de samlas i listan <i>Att granska</i> under Klasser. Rader med ⚠ är redan ikryssade.</p>' : ''}
+      ${anyAnswer ? '<p class="small muted">Det som står under <i>Eleven skrev</i> sparas på eleven, så du kan se det i klasslistan även efteråt.</p>' : ''}
       <div class="row between"><button class="btn ghost" value="cancel">Avbryt</button><button type="button" class="btn primary" data-imp-do ${nItems ? '' : 'disabled'}>Importera ${nItems} ${nItems === 1 ? 'elev' : 'elever'}${nUnres ? ` (${nUnres} att reda ut sparas)` : ''}</button></div>
     </form>`;
     m.querySelectorAll('details[data-imp-open]').forEach(d => d.addEventListener('toggle', () => { sess.colsOpen = d.open; }));

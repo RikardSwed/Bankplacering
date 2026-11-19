@@ -6,8 +6,13 @@
 
   // ---------- Version och uppdateringar ----------
   // Höj APP_VERSION och version.json tillsammans vid varje ny version.
-  const APP_VERSION = '1.11.0';
+  const APP_VERSION = '1.11.1';
   const CHANGELOG = [
+    { v: '1.11.1', date: '2026-11-19', items: [
+      'Många namn utan kommatecken ("maja ella hugo alva", "maja lind ella hugo") delas nu upp ord för ord. Förut kunde ett enda okänt ord göra att inget alls kopplades.',
+      'Importlistan har ingen egen rullning längre – hela listan syns i importfönstret.',
+      'En kort förklaring av skillnaden mellan <i>Att reda ut</i> och <i>Granska senare</i>, och rader som appen kryssat i själv är märkta.'
+    ] },
     { v: '1.11.0', date: '2026-11-19', items: [
       '<b>Rätta namn direkt i importen</b>: klicka på namnet i listan och skriv rätt, t.ex. om eleven skrivit sitt smeknamn ("Micke" → "Mikael Ek"). Finns eleven redan uppdateras hen, och andras önskemål med smeknamnet kopplas rätt.',
       'Det rättade namnet sparas som smeknamn i klassen (om <i>Kom ihåg mina val</i> är ikryssat), så nästa import känner igen det.',

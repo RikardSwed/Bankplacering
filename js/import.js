@@ -190,7 +190,32 @@ window.Import = (() => {
       cands.sort((a, b) => a.score - b.score);
       return { ids: [], candidates: cands.slice(0, 5) };
     }
-    return { match, one };
+    // Många namn utan skiljetecken: "maja lind ella hugo nisse" → Maja Lind, Ella, Hugo + "nisse" att reda ut.
+    // Flerordsnamn måste stämma exakt, enstaka ord som förnamn. Okända ord i följd hålls ihop.
+    const STOP = new Set(['och', 'and', 'eller', 'or', 'typ', 'helst', 'kanske', 'med', 'samt', 'plus', '&', '+', 'o']);
+    function segment(token) {
+      const words = nameKey(token).split(' ').filter(w => w && !STOP.has(w));
+      if (words.length < 2) return null;
+      const ids = [], rest = [];
+      let unknown = [];
+      const flush = () => { if (unknown.length) { rest.push(unknown.join(' ')); unknown = []; } };
+      for (let i = 0; i < words.length;) {
+        let hit = null, len = 0;
+        for (let n = Math.min(3, words.length - i); n >= 1 && !hit; n--) {
+          const span = words.slice(i, i + n).join(' ');
+          if (n > 1) {
+            if (aliases[span] && exists(aliases[span])) hit = aliases[span];
+            else { const ex = byKey.get(span); if (ex && ex.length === 1) hit = ex[0].id; }
+          } else { const r = one(span); if (r && r.ids.length === 1) hit = r.ids[0]; }
+          if (hit) len = n;
+        }
+        if (hit) { flush(); if (!ids.includes(hit)) ids.push(hit); i += len; }
+        else { unknown.push(words[i]); i++; }
+      }
+      flush();
+      return ids.length ? { ids, rest } : null;
+    }
+    return { match, one, segment };
   }
 
   // =====================================================================
@@ -552,27 +577,45 @@ window.Import = (() => {
     const max = k.maxWishes ?? 3;
     items.forEach(it => {
       const e = it.entry;
+      const matchedLong = [];
       const resolve = (names, kind) => {
         const ids = [];
-        names.forEach((nm, rank) => {
+        const queue = names.map((nm, rank) => ({ nm, rank }));
+        while (queue.length) {
+          const { nm, rank } = queue.shift();
           const rk = resKey(e.origName || e.name, kind, nm);
           const r = resolutions[rk];
           let got = [];
-          if (r === 'skip') return;
+          if (r === 'skip') continue;
           if (r && r !== 'add') got = [r];
           else {
             const m = M.match(nm);
-            if (m.ids.length) got = m.ids;
-            else { unresolved.push({ key: rk, who: e.name, whoItem: it, kind, token: nm, rank, candidates: (m.candidates || []).filter(c => c.id !== it.student.id) }); return; }
+            // "maja lind ella hugo" kan se ut som ett enda namn – dela upp om det ger fler elever.
+            const sg0 = m.ids.length === 1 && !r && nameKey(nm).includes(' ') ? M.segment(nm) : null;
+            if (sg0 && sg0.ids.length > 1) { got = sg0.ids; matchedLong.push(nm); queue.unshift(...sg0.rest.map(x => ({ nm: x, rank }))); }
+            else if (m.ids.length) { got = m.ids; matchedLong.push(nm); }
+            else {
+              const sg = !r && M.segment(nm);
+              if (sg) {
+                got = sg.ids;
+                matchedLong.push(nm);
+                queue.unshift(...sg.rest.map(x => ({ nm: x, rank })));
+              } else { unresolved.push({ key: rk, who: e.name, whoItem: it, kind, token: nm, rank, candidates: (m.candidates || []).filter(c => c.id !== it.student.id) }); continue; }
+            }
           }
           got.forEach(id => { if (id !== it.student.id && !ids.includes(id)) ids.push(id); });
-        });
+        }
         return ids;
       };
       it.wishIds = e.wishes !== undefined ? resolve(e.wishes, 'wish') : undefined;
       it.avoidIds = e.avoid !== undefined ? resolve(e.avoid, 'avoid') : undefined;
+      // En lång rad namn som ändå gick att koppla behöver inte granskas.
+      if (e.notes && matchedLong.length) {
+        e.notes = e.notes.filter(n => !matchedLong.some(t => n === `"${t}" ser inte ut som ett namn`));
+        e.uncertain = e.notes.length > 0;
+      }
       if (it.wishIds && it.wishIds.length > max) {
-        e.problems.push(`önskar ${it.wishIds.length} personer men klassen tillåter ${max} – bara de ${max} första tas med (ändra "Max antal önskemål" om du vill ha fler)`);
+        e.problems.push(`önskar ${it.wishIds.length} personer men klassen tillåter ${max} – bara de ${max} första tas med (höj "Antal önskemål per elev" om alla ska med)`);
         it.wishIds = it.wishIds.slice(0, max);
       }
     });
