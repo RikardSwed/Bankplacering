@@ -314,7 +314,7 @@ window.Import = (() => {
   // Tabeller (Excel, CSV, Google Formulär, inklistrat)
   // =====================================================================
   const KIND_LABELS = {
-    ignore: '– använd inte –', name: 'Namn', klass: 'Klass', gender: 'Kön', wishes: 'Vill sitta med',
+    ignore: '– använd inte –', name: 'Namn', klass: 'Klass', gender: 'Kön', wishes: 'Önskemål (fritext)',
     alone: 'Sitta själv', wishStrict: 'Strikt önskemål', avoid: 'Ska inte sitta med', pos: 'Plats i rummet', posStrict: 'Strikt plats'
   };
   function headerKind(h) {
@@ -332,17 +332,82 @@ window.Import = (() => {
     if (/(med|önsk|kompis|bredvid|vem vill)/.test(t)) return 'wishes';
     return 'ignore';
   }
+  // ---------- Vilken sorts kolumn? Gissning utifrån innehållet (när rubrikrad saknas) ----------
+  const CLASS_RE = /^\s*(klass\s*)?\d{1,2}\s*[a-zåäö]{0,3}\s*$/i;
+  const TIME_RE = /^\s*\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}([ T]\d{1,2}[:.]\d{2}.*)?\s*$|^\s*\d{1,2}[:.]\d{2}([:.]\d{2})?\s*$/;
+  function contentKind(values) {
+    const v = values.map(x => norm(x)).filter(Boolean);
+    if (!v.length) return { kind: 'ignore', conf: 1 };
+    const share = f => v.filter(f).length / v.length;
+    if (share(x => TIME_RE.test(x)) > 0.6) return { kind: 'ignore', conf: 1 };
+    if (share(x => x.includes('@')) > 0.6) return { kind: 'ignore', conf: 1 };
+    if (share(x => CLASS_RE.test(x)) > 0.6) return { kind: 'klass', conf: 1 };
+    if (share(x => gender(x) !== null && x.length <= 6) > 0.7) return { kind: 'gender', conf: 1 };
+    const words = x => x.split(/\s+/).length;
+    const nameLike = x => words(x) <= 3 && x.length <= 30 && /^[\p{L}][\p{L}\s.'-]*$/u.test(x) && !/\b(och|eller|inte|vill|med|bak|fram|ingen|vet)\b/i.test(x);
+    if (share(nameLike) > 0.75) return { kind: 'name', conf: share(nameLike) };
+    return { kind: 'wishes', conf: 0.6 };
+  }
+  function looksLikeData(row) { return row.some(c => CLASS_RE.test(norm(c)) || TIME_RE.test(norm(c))); }
+
   function guessMapping(rows) {
     const first = (rows[0] || []).map(c => norm(c));
     const kinds = first.map(headerKind);
-    const hasHeader = kinds.includes('name') || kinds.filter(k => k !== 'ignore').length >= 2;
-    if (hasHeader) {
-      // Bara en namnkolumn räknas (förnamn + efternamn slås ihop).
-      return { hasHeader: true, mapping: kinds, headers: first };
-    }
-    // Utan rubriker: Namn, Kön, Vill sitta med, Ska inte sitta med, Plats, Strikt plats, Sitta själv
-    const def = ['name', 'gender', 'wishes', 'avoid', 'pos', 'posStrict', 'alone'];
-    return { hasHeader: false, mapping: first.map((_, i) => def[i] || 'ignore'), headers: first.map((_, i) => `Kolumn ${i + 1}`) };
+    const known = kinds.filter(k => k !== 'ignore').length;
+    const hasHeader = !looksLikeData(first) && (kinds.includes('name') || known >= 2);
+    const ncols = Math.max(...rows.map(r => (r || []).length), first.length);
+    if (hasHeader) return { hasHeader: true, mapping: kinds.concat(new Array(Math.max(0, ncols - kinds.length)).fill('ignore')), headers: first, guessed: 'header' };
+    // Utan rubriker: titta på innehållet i varje kolumn.
+    const mapping = [];
+    for (let j = 0; j < ncols; j++) mapping.push(contentKind(rows.map(r => (r || [])[j])).kind);
+    // Bara en namnkolumn – den första; fler "namnlika" kolumner är troligen önskemål med ett namn i.
+    let seenName = false;
+    mapping.forEach((k, j) => { if (k === 'name') { if (seenName) mapping[j] = 'wishes'; seenName = true; } });
+    if (!seenName) { const j = mapping.findIndex(k => k === 'wishes'); if (j >= 0) mapping[j] = 'name'; }
+    return { hasHeader: false, mapping, headers: mapping.map((_, i) => `Kolumn ${i + 1}`), guessed: 'content' };
+  }
+
+  // ---------- Fritext: dela upp i vill sitta med / inte sitta med / plats ----------
+  const NEG_RE = /\b(inte|ej|icke|undvik\w*|absolut inte|helst inte|aldrig)\b/i;
+  const POS_PHRASES = [
+    [/\b(längst fram|längre fram|framme|framtill|nära tavlan|vid tavlan|främre raden|första raden|främst|fram)\b/gi, 'fram'],
+    [/\b(längst bak|längre bak|bakerst|baktill|bakre raden|sista raden|där bak|bak)\b/gi, 'bak'],
+    [/\b(i mitten|mittenraden|mitten)\b/gi, 'mitten'],
+    [/\b(till vänster|vänstra|vänster)\b/gi, 'vänster'],
+    [/\b(till höger|högra|höger)\b/gi, 'höger']
+  ];
+  // Platser som inte går att översätta till rutnätet – sparas för läraren att titta på.
+  const UNMAPPED_RE = /\b(vid|nära|bredvid|intill|mot|långt från|en bit från)\s+(fönstr\w*|fönster|dörr\w*|vägg\w*|element\w*|kateder\w*|katedern|lärar\w*|whiteboard\w*|skåp\w*|gång\w*|hörn\w*)\b/gi;
+  const FILL_WORDS = /\b(jag|vill|gärna|helst|sitta|sitter|vara|med|bredvid|nära|kanske|typ|också|och|eller|om|det|går|i|på|till|längst|där|lite|plats(en)?|rad(en)?|klassrummet|salen|rummet|bara|kan|skulle|vilja)\b/gi;
+
+  function classifyFree(text) {
+    const out = { wish: [], avoid: [], posWords: [], leftovers: [], ranked: false };
+    let t = String(text ?? '').replace(/\r?\n/g, '. ');
+    if (IGNORE_W.includes(low(t).replace(/[.!?]+$/, ''))) return out;
+    // Numrerade önskemål ("1. Maja 2. Ella") = prioritetsordning
+    if (/(^|[\s;,])\d\s*[.):]\s*\S/.test(t)) { out.ranked = true; t = t.replace(/(^|[\s;,])\d\s*[.):]\s*/g, '; '); }
+    t = t.replace(UNMAPPED_RE, m => { out.leftovers.push(m.trim()); return ' '; });
+    const clauses = t.split(/[.!?]+|\s+men\s+|\s+fast\s+/i).map(x => x.trim()).filter(Boolean);
+    clauses.forEach(cl => {
+      if (IGNORE_W.includes(low(cl))) return;
+      // platsord ut ur satsen
+      let rest = cl;
+      POS_PHRASES.forEach(([re, word]) => { rest = rest.replace(re, () => { out.posWords.push(word); return ' '; }); });
+      const neg = rest.search(NEG_RE);
+      const take = (part, list) => {
+        const sp = splitFree(part);
+        if (sp.ranked) out.ranked = true;
+        sp.tokens.forEach(tok => {
+          const clean = norm(tok.replace(NEG_RE, ' ').replace(FILL_WORDS, ' '));
+          if (!clean) return;
+          if (IGNORE_W.includes(low(clean))) return;
+          list.push(clean);
+        });
+      };
+      if (neg >= 0) { take(rest.slice(0, neg), out.wish); take(rest.slice(neg), out.avoid); }
+      else take(rest, out.wish);
+    });
+    return out;
   }
 
   function entriesFromTable(rows, mapping, hasHeader, opts = {}) {
@@ -350,34 +415,52 @@ window.Import = (() => {
     const entries = [];
     const idx = kind => mapping.map((k, i) => (k === kind ? i : -1)).filter(i => i >= 0);
     const nameCols = idx('name'), wishCols = idx('wishes');
+    const answerCols = mapping.map((k, i) => (['wishes', 'avoid', 'pos', 'alone'].includes(k) ? i : -1)).filter(i => i >= 0);
     for (let i = hasHeader ? 1 : 0; i < rows.length; i++) {
       const row = rows[i];
       const get = kind => { const j = mapping.indexOf(kind); return j >= 0 ? row[j] : undefined; };
       const name = norm(nameCols.map(j => row[j]).filter(x => norm(x)).join(' '));
       if (!name) continue;
-      const e = { line: i + 1, raw: row.join(' | '), problems: [], name };
+      const e = { line: i + 1, raw: row.join(' | '), problems: [], name, notes: [] };
+      // Elevens egen text sparas, så att läraren kan jämföra med hur appen tolkat den.
+      const answer = answerCols.map(j => norm(row[j])).filter(Boolean).join(' · ');
+      if (answer) e.answer = answer;
       const kl = get('klass'); if (kl !== undefined && norm(kl)) e.klass = norm(kl);
       const g = get('gender');
       if (g !== undefined && norm(g)) { const gg = gender(g); if (gg === null) e.problems.push(`förstod inte könet "${g}"`); else e.gender = gg; }
+      let freeAvoid = [], freePos = [];
       if (wishCols.length) {
         const texts = wishCols.map(j => row[j]).filter(x => norm(x));
         if (texts.length) {
           const toks = [];
           let ranked = wishCols.length > 1 && !!opts.multiRanked;
-          texts.forEach(tx => { const sp = splitFree(tx); toks.push(...sp.tokens); if (sp.ranked) ranked = true; });
+          texts.forEach(tx => {
+            const c = classifyFree(tx);
+            toks.push(...c.wish); freeAvoid.push(...c.avoid); freePos.push(...c.posWords);
+            if (c.ranked) ranked = true;
+            c.leftovers.forEach(l => e.notes.push(`"${l}" går inte att översätta till en plats`));
+          });
           applyWishList(e, toks, false, ranked || !!opts.ranked);
-        }
+        } else applyWishList(e, [], false, false);
       }
       const wsx = get('wishStrict');
       if (wsx !== undefined && norm(wsx)) { if (YES.includes(low(wsx)) || low(wsx) === 'strikt') e.wishStrict = true; else if (['nej', 'n', '0', 'false', 'no'].includes(low(wsx))) e.wishStrict = false; }
-      const a = get('avoid'); if (a !== undefined && norm(a)) e.avoid = avoidList(a);
+      const a = get('avoid');
+      if (a !== undefined && norm(a)) e.avoid = avoidList(a).concat(freeAvoid);
+      else if (freeAvoid.length || wishCols.length) e.avoid = freeAvoid;
       const p = get('pos');
       if (p !== undefined && norm(p)) {
         const ps = YES.includes(low(get('posStrict'))) || low(get('posStrict')) === 'strikt';
-        const r = parsePos(p, ps);
-        if (r.bad.length) e.problems.push(`förstod inte platsen "${r.bad.join('; ')}"`);
+        const c = classifyFree(p);
+        const words = c.posWords.length ? c.posWords.join(' ') : p;
+        const r = parsePos(words, ps);
+        if (r.bad.length && !c.posWords.length) e.problems.push(`förstod inte platsen "${r.bad.join('; ')}"`);
+        c.leftovers.forEach(l => e.notes.push(`"${l}" går inte att översätta till en plats`));
         e.pos = r.pos;
-      }
+      } else if (freePos.length) {
+        const r = parsePos(freePos.join(' '), false);
+        e.pos = r.pos;
+      } else if (wishCols.length) e.pos = null;
       const al = get('alone');
       if (al !== undefined && norm(al)) {
         const v = low(al);
@@ -387,6 +470,10 @@ window.Import = (() => {
         else e.problems.push(`förstod inte "sitta själv": "${al}"`);
       }
       if (opts.ranked && e.wishes && e.wishes.length) e.wishRanked = true;
+      // Långa "namn" är troligen meningar appen inte förstått – flagga för granskning.
+      const longTok = (e.wishes || []).concat(e.avoid || []).filter(x => x.split(/\s+/).length >= 3);
+      longTok.forEach(x => e.notes.push(`"${x}" ser inte ut som ett namn`));
+      e.uncertain = e.notes.length > 0;
       entries.push(e);
     }
     return entries;
@@ -511,6 +598,9 @@ window.Import = (() => {
       if (s.alone && s.alone.strict) { s.wishStrict = true; s.alone = {}; }
       if (!((s.wishes || []).length || s.alone || s.wishGirl || s.wishBoy)) delete s.wishStrict;
       if (!(s.wishes || []).length) delete s.wishRanked;
+      // Elevens egen text från formuläret, och om läraren vill granska eleven senare
+      if (e.answer) s.answer = { text: e.answer, date: new Date().toISOString().slice(0, 10) };
+      if (it.review) s.review = true;
       // Det som inte gick att reda ut nu sparas i klassens lista "Att reda ut".
       if (it.wishIds !== undefined) k.unresolved = k.unresolved.filter(u => !(u.from === s.id && u.kind === 'wish'));
       if (it.avoidIds !== undefined) k.unresolved = k.unresolved.filter(u => !(u.from === s.id && u.kind === 'avoid'));
@@ -571,7 +661,7 @@ window.Import = (() => {
   ];
 
   return {
-    parseText, guessMapping, entriesFromTable, groupByClass, classKey, nameKey, matcher, splitFree,
+    parseText, guessMapping, entriesFromTable, classifyFree, groupByClass, classKey, nameKey, matcher, splitFree,
     plan, apply, toLine, toRows, posToText, parsePos, resKey, EXAMPLE_ROWS, HEAD, KIND_LABELS
   };
 })();

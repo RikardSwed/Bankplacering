@@ -6,8 +6,16 @@
 
   // ---------- Version och uppdateringar ----------
   // Höj APP_VERSION och version.json tillsammans vid varje ny version.
-  const APP_VERSION = '1.8.0';
+  const APP_VERSION = '1.9.0';
   const CHANGELOG = [
+    { v: '1.9.0', date: '2026-11-19', items: [
+      'Klistra in <b>bara några celler</b> från Google Kalkylark eller Excel – även utan rubrikrad. Appen gissar vad kolumnerna innehåller utifrån cellerna (namn, klass, önskemål …).',
+      'Du kan ändra vad varje kolumn är, och appen <b>kommer ihåg kolumnordningen</b> till nästa gång du klistrar in en likadan tabell.',
+      'En kolumn med <b>önskemål i fritext</b> delas upp: vem eleven vill sitta med, vem eleven <i>inte</i> vill sitta med ("inte Hugo") och var i rummet ("längst bak").',
+      'Förhandsgranskningen visar <b>det eleven skrev</b> bredvid appens tolkning, så att det är lätt att kontrollera.',
+      'Elevens text <b>sparas</b> och syns i klasslistan (kan döljas).',
+      '<b>Granska senare</b>: markera elever vid importen eller i klasslistan (🏷). De samlas i listan <i>Att granska</i> med elevens text och knappar för att rätta.'
+    ] },
     { v: '1.8.0', date: '2026-11-16', items: [
       'Ny inställning vid lottningen: <b>Spridning av killar och tjejer i rummet</b> – ingen hänsyn, lite, mycket eller strikt blandat. Motverkar att alla tjejer hamnar i en del av rummet och alla killar i en annan.',
       '<b>Rangordnade önskemål</b>: för elever där förstahandsvalet är viktigast kan du rangordna önskemålen (1, 2, 3). Frivilligt per elev.',
@@ -118,7 +126,7 @@
   try { Object.assign(ui, JSON.parse(localStorage.getItem(KEY + '-ui') || '{}')); } catch (e) { /* ignore */ }
   function saveUi() {
     try {
-      localStorage.setItem(KEY + '-ui', JSON.stringify({ tab: ui.tab, roomId: ui.roomId, classId: ui.classId, flipped: ui.flipped, tool: ui.tool, pickSort: ui.pickSort, studentSort: ui.studentSort, rememberAlias: ui.rememberAlias }));
+      localStorage.setItem(KEY + '-ui', JSON.stringify({ tab: ui.tab, roomId: ui.roomId, classId: ui.classId, flipped: ui.flipped, tool: ui.tool, pickSort: ui.pickSort, studentSort: ui.studentSort, rememberAlias: ui.rememberAlias, showAnswers: ui.showAnswers, importMaps: ui.importMaps }));
     } catch (e) { /* ignore */ }
   }
 
@@ -499,12 +507,34 @@
     const list = k.students.slice();
     const az = (a, b) => a.name.localeCompare(b.name, 'sv');
     if (mode === 'az') return list.sort(az);
+    if (mode === 'review') return list.sort((a, b) => (b.review ? 1 : 0) - (a.review ? 1 : 0));
     if (mode === 'gender') { const o = { t: 0, k: 1, '': 2 }; return list.sort((a, b) => (o[a.gender || ''] - o[b.gender || '']) || az(a, b)); }
     if (mode === 'easy' || mode === 'hard') {
       const sc = new Map(list.map(s => [s.id, easeOf(s, k)]));
       return list.sort((a, b) => (mode === 'easy' ? sc.get(b.id) - sc.get(a.id) : sc.get(a.id) - sc.get(b.id)) || az(a, b));
     }
     return list;
+  }
+
+  // "Att granska": elever läraren markerat, med elevens egen text och appens tolkning
+  function reviewCard(k) {
+    const list = k.students.filter(s => s.review);
+    if (!list.length) return '';
+    const byId = new Map(k.students.map(s => [s.id, s]));
+    const nm = id => byId.get(id)?.name || '?';
+    return `<div class="review-card">
+      <div class="row between"><b>Att granska (${list.length})</b><button class="btn ghost small-btn" data-review-all>Markera alla som klara</button></div>
+      <p class="small muted">Elever du har markerat. Jämför det eleven skrev med hur det är ifyllt, och ändra med knapparna.</p>
+      ${list.map(s => `<div class="rv-item">
+        <div class="rv-head"><b>${esc(s.name)}</b>
+          <span class="rv-btns"><button class="btn small-btn" data-edit-wishes="${s.id}">Önskemål</button><button class="btn small-btn" data-edit-avoid="${s.id}">Inte med</button><button class="btn small-btn" data-edit-pos="${s.id}">Plats</button><button class="btn small-btn primary" data-review-done="${s.id}">✓ Klar</button></span></div>
+        ${s.answer ? `<div class="rv-ans">Eleven skrev: <q>${esc(s.answer.text)}</q></div>` : '<div class="rv-ans muted small">Inget sparat svar från eleven.</div>'}
+        <div class="rv-int small">
+          <span><span class="muted">Vill sitta med:</span> ${((s.wishes || []).map((id, i) => `<span class="chip sm">${s.wishRanked ? `<span class="rk sm">${i + 1}</span>` : ''}${esc(nm(id))}</span>`).join(' ') + generalChips(s)) || '–'}</span>
+          <span><span class="muted">Inte med:</span> ${(s.avoid || []).map(id => `<span class="chip sm bad">${esc(nm(id))}</span>`).join(' ') || '–'}</span>
+          <span><span class="muted">Plats:</span> ${posCells(s).length ? `${miniGrid(s)} ${esc(posText(s))}` : '–'}</span>
+        </div></div>`).join('')}
+    </div>`;
   }
 
   function renderKlasser(v) {
@@ -529,14 +559,16 @@
         return `<span class="chip sm ${mutual ? 'mutual' : ''}" ${mutual ? 'title="Önskar varandra"' : ''}>${s.wishRanked ? `<span class="rk sm">${i + 1}</span>` : ''}${esc(nameOf(id))}${mutual ? ' ♥' : ''}</span>`;
       }).join('');
       const ach = (s.avoid || []).filter(nameOf).map(id => `<span class="chip sm bad">${esc(nameOf(id))}</span>`).join('');
-      return `<tr>
-        <td><input class="sname" value="${esc(s.name)}" data-sname="${s.id}" aria-label="Namn"></td>
+      const ans = s.answer && ui.showAnswers !== false
+        ? `<div class="ans" title="Eleven skrev (${esc(s.answer.date || '')}): ${esc(s.answer.text)}">💬 ${esc(s.answer.text.length > 70 ? s.answer.text.slice(0, 68) + '…' : s.answer.text)}</div>` : '';
+      return `<tr class="${s.review ? 'review' : ''}">
+        <td><input class="sname" value="${esc(s.name)}" data-sname="${s.id}" aria-label="Namn">${ans}</td>
         <td><div class="seg">${[['', '–'], ['k', 'Kille'], ['t', 'Tjej']].map(([g, l]) =>
           `<button class="${(s.gender || '') === g ? 'on' : ''} ${g ? 'g-' + g : ''}" data-gender="${g}" data-sid="${s.id}">${l}</button>`).join('')}</div></td>
         <td><button class="chipbox" data-edit-wishes="${s.id}">${(wch + generalChips(s)) ? `${wch}${generalChips(s)}${Lottning.wishStrictOf(s) ? '<span class="tag strict">strikt</span>' : ''}` : '<span class="add">+ Önska</span>'}</button></td>
         <td><button class="chipbox" data-edit-avoid="${s.id}">${ach || '<span class="add">+ Lägg till</span>'}</button></td>
         <td><button class="chipbox posbox" data-edit-pos="${s.id}" title="${esc(posText(s) || 'Inget platsönskemål')}">${posCells(s).length ? `${miniGrid(s)}${s.pos.strict ? '<span class="tag strict">strikt</span>' : ''}` : '<span class="add">+ Plats</span>'}</button></td>
-        <td><button class="icon danger" data-del-student="${s.id}" title="Ta bort ${esc(s.name)}">×</button></td></tr>`;
+        <td class="row-acts"><button class="icon flag ${s.review ? 'on' : ''}" data-review="${s.id}" title="${s.review ? 'Markerad att granska – klicka för att ta bort markeringen' : 'Markera att granska senare'}">${s.review ? '🔖' : '🏷'}</button><button class="icon danger" data-del-student="${s.id}" title="Ta bort ${esc(s.name)}">×</button></td></tr>`;
     }).join('');
 
     v.innerHTML = `<div class="split">${list}<section class="card main">
@@ -585,9 +617,11 @@ Saga, t, med: Alva; en tjej</pre>
         </details>
       </details>
       ${ImportUI.classExtras(k)}
+      ${reviewCard(k)}
       ${k.students.length ? `<div class="row wrap gap sortrow"><label class="field">Visa eleverna <select data-ssort>
-          ${[['added', 'Som de lades in'], ['az', 'A–Ö'], ['gender', 'Efter kön'], ['easy', 'Lättast att placera först'], ['hard', 'Svårast att placera först']].map(([v, l]) => `<option value="${v}" ${sortMode === v ? 'selected' : ''}>${l}</option>`).join('')}
+          ${[['added', 'Som de lades in'], ['az', 'A–Ö'], ['gender', 'Efter kön'], ['easy', 'Lättast att placera först'], ['hard', 'Svårast att placera först'], ['review', 'Att granska först']].map(([v, l]) => `<option value="${v}" ${sortMode === v ? 'selected' : ''}>${l}</option>`).join('')}
         </select></label>
+        ${k.students.some(s => s.answer) ? `<label class="check small"><input type="checkbox" data-show-answers ${ui.showAnswers !== false ? 'checked' : ''}> Visa elevernas svar</label>` : ''}
         ${sortMode === 'easy' || sortMode === 'hard' ? '<span class="small muted">Lätt = önskar någon som önskar tillbaka, eller har allmänna val. Svårt = önskar bara sådana som inte önskar tillbaka, har strikta krav eller många att undvika.</span>' : sortMode === 'added' ? '<span class="small muted">Samma ordning som i importen eller formuläret.</span>' : ''}
       </div>
       <div class="table-wrap"><table class="list-table students"><thead><tr><th>Namn</th><th>Kön</th><th>Önskar sitta med</th><th>Ska inte sitta med</th><th>Plats i rummet</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
@@ -1275,6 +1309,11 @@ Saga, t, med: Alva; en tjej</pre>
     const ea = t.closest('[data-edit-avoid]');
     if (ea) { openPicker(ea.dataset.editAvoid, 'avoid'); return; }
     if (ui.tab === 'klasser' && klass(ui.classId) && ImportUI.onClassClick(e, klass(ui.classId))) return;
+    const rvt = t.closest('[data-review]');
+    if (rvt) { const s = klass(ui.classId).students.find(x => x.id === rvt.dataset.review); if (s.review) delete s.review; else s.review = true; save(); render(); return; }
+    const rvd = t.closest('[data-review-done]');
+    if (rvd) { const s = klass(ui.classId).students.find(x => x.id === rvd.dataset.reviewDone); delete s.review; save(); render(); toast(`${s.name} är granskad.`); return; }
+    if (t.closest('[data-review-all]')) { klass(ui.classId).students.forEach(s => { delete s.review; }); save(); render(); return; }
     const ds = t.closest('[data-del-student]');
     if (ds) {
       const k = klass(ui.classId), id = ds.dataset.delStudent;
@@ -1345,6 +1384,7 @@ Saga, t, med: Alva; en tjej</pre>
     }
     if (ui.tab === 'klasser' && klass(ui.classId) && ImportUI.onClassChange(e, klass(ui.classId))) return;
     if (t.matches('[data-ssort]')) { ui.studentSort = t.value; saveUi(); render(); return; }
+    if (t.matches('[data-show-answers]')) { ui.showAnswers = t.checked; saveUi(); render(); return; }
     if (t.matches('[data-sname]')) {
       const s = klass(ui.classId).students.find(x => x.id === t.dataset.sname);
       if (t.value.trim()) s.name = t.value.trim();

@@ -15,12 +15,16 @@ window.ImportUI = (() => {
   function open(src) {
     const { klass, ui } = B();
     const k = klass(ui.classId);
-    sess = { source: src.source || 'text', resolutions: {}, addNames: {}, remember: ui.rememberAlias !== false, idCache: {}, mode: 'this', pickGroup: null, ranked: false };
+    sess = { source: src.source || 'text', resolutions: {}, addNames: {}, review: {}, remember: ui.rememberAlias !== false, idCache: {}, mode: 'this', pickGroup: null, ranked: false };
     if (src.rows) {
       sess.kind = 'table';
       sess.rows = src.rows.filter(r => (r || []).some(c => String(c ?? '').trim()));
       const g = I().guessMapping(sess.rows);
       Object.assign(sess, g);
+      // Har läraren ställt in kolumnerna förut för samma sorts tabell? Använd det igen.
+      const saved = (ui.importMaps || {})[mapKey()];
+      if (saved && saved.length === sess.mapping.length) { sess.mapping = saved.slice(); sess.guessed = 'saved'; }
+      sess.colsOpen = !sess.hasHeader || sess.guessed === 'saved';
       // Flera önskemålskolumner med siffror ("Önskemål 1", "Önskemål 2") = prioritetsordning
       const wishHeads = g.headers.filter((h, i) => g.mapping[i] === 'wishes');
       sess.ranked = wishHeads.length > 1 && wishHeads.every(h => /\d|första|andra|tredje/i.test(h));
@@ -41,6 +45,16 @@ window.ImportUI = (() => {
     m.classList.add('wide');
     draw();
     m.showModal();
+  }
+
+  function mapKey() {
+    return sess.hasHeader ? 'h:' + sess.headers.map(h => I().nameKey(h)).join('|') : 'n:' + sess.mapping.length;
+  }
+  function rememberMapping() {
+    const { ui, saveUi } = B();
+    ui.importMaps = ui.importMaps || {};
+    ui.importMaps[mapKey()] = sess.mapping.slice();
+    saveUi();
   }
 
   function compute() {
@@ -86,6 +100,11 @@ window.ImportUI = (() => {
         }
       });
       t.plan = I().plan(t.klass, t.entries, key => sess.idCache[t.tid + '|' + key] || (sess.idCache[t.tid + '|' + key] = uid()), res);
+      t.plan.items.forEach(it => {
+        const rk = t.tid + '§' + I().nameKey(it.entry.name);
+        it.reviewKey = rk;
+        it.review = rk in sess.review ? sess.review[rk] : !!it.entry.uncertain;
+      });
     });
     sess.targets = targets;
   }
@@ -117,7 +136,9 @@ window.ImportUI = (() => {
       const sample = sess.rows[sess.hasHeader ? 1 : 0] || [];
       const kinds = Object.entries(I().KIND_LABELS);
       cols = `<details class="imp-sec" ${sess.colsOpen ? 'open' : ''} data-imp-open="cols"><summary>Kolumner <span class="muted small">– ${sess.mapping.filter(x => x !== 'ignore').length} av ${sess.mapping.length} används</span></summary>
-        <p class="small muted">Appen har gissat vad varje kolumn innehåller utifrån rubrikerna. Ändra om något blev fel. Flera kolumner kan vara <i>Vill sitta med</i> (t.ex. "Önskemål 1", "Önskemål 2").</p>
+        ${sess.guessed === 'content' ? '<p class="small warn-text"><b>Ingen rubrikrad hittades</b> – appen har gissat utifrån vad som står i cellerna. Kontrollera att kolumnerna stämmer.</p>' : ''}
+        ${sess.guessed === 'saved' ? '<p class="small good-text">✓ Samma kolumnordning som du använde senast.</p>' : ''}
+        <p class="small muted">Ändrar du en kolumn kommer appen ihåg ordningen till nästa gång du klistrar in en likadan tabell. En kolumn med <i>Önskemål (fritext)</i> kan innehålla både vem eleven vill och inte vill sitta med, och var i rummet – appen delar upp det.</p>
         <div class="colmap">${sess.headers.map((h, i) => `<div class="colm ${sess.mapping[i] === 'ignore' ? 'off' : ''}">
           <div class="colh" title="${esc(h)}">${esc(h || `Kolumn ${i + 1}`)}</div>
           <div class="cols small muted" title="${esc(sample[i] || '')}">${esc(String(sample[i] ?? '').slice(0, 40)) || '&nbsp;'}</div>
@@ -171,7 +192,11 @@ window.ImportUI = (() => {
 
     // --- Tabell ---
     const keep = '<span class="muted">(behålls)</span>';
-    const rowsHtml = T.map(t => (T.length > 1 ? `<tr class="grp"><td colspan="5"><b>${esc(t.klass.name)}</b>${t.isNew ? ' <span class="tag">ny klass</span>' : ''} · ${t.plan.items.length} elever</td></tr>` : '') +
+    const anyAnswer = T.some(t => t.plan.items.some(it => it.entry.answer));
+    const anyGender = T.some(t => t.plan.items.some(it => it.entry.gender));
+    const ncol = 5 + (anyAnswer ? 1 : 0) + (anyGender ? 1 : 0);
+    const nReview = T.reduce((a, t) => a + t.plan.items.filter(i => i.review).length, 0);
+    const rowsHtml = T.map(t => (T.length > 1 ? `<tr class="grp"><td colspan="${ncol}"><b>${esc(t.klass.name)}</b>${t.isNew ? ' <span class="tag">ny klass</span>' : ''} · ${t.plan.items.length} elever</td></tr>` : '') +
       t.plan.items.map(it => {
         const e = it.entry;
         const cell = (v, fmt) => (v === undefined ? (it.isNew ? '<span class="muted">–</span>' : keep) : fmt(v));
@@ -181,20 +206,23 @@ window.ImportUI = (() => {
           unr.filter(u => u.kind === 'wish').map(u => `<span class="chip sm unk" title="Att reda ut">${esc(u.token)} ?</span>`).join(' ');
         const al = cell(it.avoidIds, ids => ids.map(id => `<span class="chip sm bad">${esc(nameIn(t, id))}</span>`).join(' ') || '–') +
           unr.filter(u => u.kind === 'avoid').map(u => ` <span class="chip sm unk">${esc(u.token)} ?</span>`).join('');
-        return `<tr class="${e.problems.length || unr.length ? 'warn' : ''}">
+        return `<tr class="${it.review ? 'review' : e.problems.length || unr.length ? 'warn' : ''}">
           <td><b>${esc(e.name)}</b> ${it.isNew ? '<span class="tag">ny</span>' : `<span class="tag upd" title="Finns redan som ${esc(it.student.name)}">uppdateras</span>`}</td>
-          <td>${cell(e.gender, g => (g === 'k' ? 'Kille' : g === 't' ? 'Tjej' : '–'))}</td>
+          ${anyGender ? `<td>${cell(e.gender, g => (g === 'k' ? 'Kille' : g === 't' ? 'Tjej' : '–'))}</td>` : ''}
           <td>${wl.trim() || '–'}${e.wishStrict ? ' <span class="tag strict">strikt</span>' : ''}</td>
           <td>${al}</td>
-          <td>${cell(e.pos, pos => (pos ? `${miniGrid({ pos })} <span class="small">${esc(I().posToText(pos))}</span>${pos.strict ? ' <span class="tag strict">strikt</span>' : ''}` : '–'))}</td></tr>`;
+          <td>${cell(e.pos, pos => (pos ? `${miniGrid({ pos })} <span class="small">${esc(I().posToText(pos))}</span>${pos.strict ? ' <span class="tag strict">strikt</span>' : ''}` : '–'))}</td>
+          ${anyAnswer ? `<td class="answer">${e.answer ? `<q>${esc(e.answer)}</q>` : '<span class="muted">–</span>'}${(e.notes || []).map(n => `<div class="small warn-text">⚠ ${esc(n)}</div>`).join('')}</td>` : ''}
+          <td class="rv"><label class="rvbox" title="Markera eleven så att du kan titta på hen senare under Klasser"><input type="checkbox" data-imp-review="${esc(it.reviewKey)}" ${it.review ? 'checked' : ''}> <span>Granska senare</span></label></td></tr>`;
       }).join('')).join('');
 
     m.innerHTML = `<form method="dialog" class="modal import-preview">
       <h3>Förhandsgranska import</h3>
-      <p class="small">${sess.source === 'text' ? 'Från textrutan' : 'Från <b>' + esc(sess.source) + '</b>'}: <b>${nItems}</b> elever${T.length > 1 ? ` i <b>${T.length}</b> klasser` : ''} – ${nNew} nya, ${nItems - nNew} som redan finns och uppdateras.${nUnres ? ` <span class="bad-text">${nUnres} namn att reda ut.</span>` : ''}</p>
+      <p class="small">${sess.source === 'text' ? 'Från textrutan' : 'Från <b>' + esc(sess.source) + '</b>'}: <b>${nItems}</b> elever${T.length > 1 ? ` i <b>${T.length}</b> klasser` : ''} – ${nNew} nya, ${nItems - nNew} som redan finns och uppdateras.${nUnres ? ` <span class="bad-text">${nUnres} namn att reda ut.</span>` : ''}${nReview ? ` <span class="warn-text">${nReview} markerade att granska senare.</span>` : ''}</p>
       ${cols}${classes}${ranked}${simHtml}${unresHtml}
       ${probs.length ? `<div class="gbox warn"><b>Kontrollera ${probs.length} ${probs.length === 1 ? 'sak' : 'saker'}</b><ul class="small">${probs.map(x => `<li>${x}</li>`).join('')}</ul></div>` : ''}
-      <div class="table-wrap preview-table"><table class="list-table"><thead><tr><th>Namn</th><th>Kön</th><th>Vill sitta med</th><th>Ska inte sitta med</th><th>Plats i rummet</th></tr></thead><tbody>${rowsHtml || '<tr><td colspan="5" class="muted">Inga elever att importera – kontrollera kolumnerna.</td></tr>'}</tbody></table></div>
+      <div class="table-wrap preview-table"><table class="list-table"><thead><tr><th>Namn</th>${anyGender ? '<th>Kön</th>' : ''}<th>Vill sitta med</th><th>Ska inte sitta med</th><th>Plats i rummet</th>${anyAnswer ? '<th>Eleven skrev</th>' : ''}<th></th></tr></thead><tbody>${rowsHtml || `<tr><td colspan="${ncol}" class="muted">Inga elever att importera – kontrollera kolumnerna.</td></tr>`}</tbody></table></div>
+      ${anyAnswer ? '<p class="small muted">Jämför appens tolkning med det eleven skrev. Det som står under <i>Eleven skrev</i> sparas på eleven, så du kan se det i klasslistan även efteråt. Kryssa i <b>Granska senare</b> för elever du vill titta närmare på – de samlas i listan <i>Att granska</i> under Klasser. Rader med ⚠ är redan ikryssade.</p>' : ''}
       <div class="row between"><button class="btn ghost" value="cancel">Avbryt</button><button type="button" class="btn primary" data-imp-do ${nItems ? '' : 'disabled'}>Importera ${nItems} ${nItems === 1 ? 'elev' : 'elever'}${nUnres ? ` (${nUnres} att reda ut sparas)` : ''}</button></div>
     </form>`;
     m.querySelectorAll('details[data-imp-open]').forEach(d => d.addEventListener('toggle', () => { sess.colsOpen = d.open; }));
@@ -214,7 +242,8 @@ window.ImportUI = (() => {
   function onModalChange(e) {
     const t = e.target;
     if (!sess) return;
-    if (t.matches('[data-imp-col]')) { sess.mapping[+t.dataset.impCol] = t.value; compute(); draw(); return; }
+    if (t.matches('[data-imp-col]')) { sess.mapping[+t.dataset.impCol] = t.value; sess.guessed = 'manual'; rememberMapping(); compute(); draw(); return; }
+    if (t.matches('[data-imp-review]')) { sess.review[t.dataset.impReview] = t.checked; compute(); draw(); return; }
     if (t.matches('[data-imp-header]')) {
       sess.hasHeader = t.checked;
       if (!t.checked) sess.headers = sess.headers.map((_, i) => `Kolumn ${i + 1}`);
@@ -252,7 +281,7 @@ window.ImportUI = (() => {
       nUpd += t.plan.items.filter(i => !i.isNew).length;
       nUnres += t.plan.unresolved.length;
     });
-    if (sess.source === 'text') ui.bulkDraft = '';
+    if (sess.source === 'text' || sess.source === 'inklistrad tabell') ui.bulkDraft = '';
     ui.addOpen = false;
     save();
     $('#modal').close();
@@ -278,7 +307,7 @@ window.ImportUI = (() => {
           const fresh = window.Import.matcher(k.students, k.aliases || {}).match(u.token);
           const cands = (u.candidates || []).filter(id => sById.has(id)).map(id => ({ id }));
           (fresh.candidates || []).forEach(c => { if (!cands.some(x => x.id === c.id)) cands.push(c); });
-          return `<div class="unres"><span><b>${esc(nm(u.from))}</b> ${u.kind === 'wish' ? 'vill sitta med' : 'ska inte sitta med'} »${esc(u.token)}«</span>
+          return `<div class="unres"><span><b>${esc(nm(u.from))}</b> ${u.kind === 'wish' ? 'vill sitta med' : 'ska inte sitta med'} »${esc(u.token)}«${sById.get(u.from)?.answer ? `<br><span class="small muted">Eleven skrev: <q>${esc(sById.get(u.from).answer.text)}</q></span>` : ''}</span>
             ${resSelect('k§' + u.id, cands.filter(c => c.id !== u.from), sorted.filter(s => s.id !== u.from), nm, '', u.token)}</div>`;
         }).join('')}
         <label class="check small"><input type="checkbox" data-unres-remember ${ui.rememberAlias !== false ? 'checked' : ''}> Kom ihåg mina val till nästa import</label>

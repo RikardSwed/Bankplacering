@@ -6,7 +6,7 @@ window.Guide = (() => {
   'use strict';
 
   // Bildernas mått, så att sidan inte hoppar när bilderna laddas
-  const SIZES = {"data":[2448,438],"flytta-dialog":[1128,616],"flytta-info":[2448,186],"flytta-karta":[2448,1530],"gr-flaggor":[2380,782],"gr-grupper":[2388,774],"gr-historik":[2380,654],"gr-karta":[2380,1034],"gr-platser":[2448,402],"gr-resultat":[2448,786],"gr-schema":[2388,796],"gr-verktyg":[2388,188],"import-formular":[2408,1988],"klass-att-reda-ut":[1896,570],"klasser-import-forhand":[2408,1368],"klasser-import":[1888,1970],"klasser-lagg-till":[1888,632],"klasser-lista":[1896,1358],"klasser-onskemal":[1128,1738],"klasser-plats-rad":[1872,124],"klasser-plats-strikt":[1128,1030],"klasser-plats":[1128,1030],"klasser-rangordna":[1128,2032],"klasser-sitta-sjalv":[1128,1738],"klassrum-grupprum":[1888,512],"klassrum-mall":[1888,308],"klassrum-rita":[1896,1444],"klassrum-zoner":[1896,1130],"lottning-karta":[2448,1274],"lottning-kontroller":[2448,606],"lottning-rapport":[2448,438],"lottning-spara":[2448,176],"sparade":[2448,478],"uppdateringar":[1128,1538]};
+  const SIZES = {"import-elevsvar":[2320,500],"import-kolumner-gissade":[2320,424],"klass-att-granska":[1856,568],"data":[2448,438],"flytta-dialog":[1128,616],"flytta-info":[2448,186],"flytta-karta":[2448,1530],"gr-flaggor":[2380,782],"gr-grupper":[2388,774],"gr-historik":[2380,654],"gr-karta":[2380,1034],"gr-platser":[2448,402],"gr-resultat":[2448,746],"gr-schema":[2388,796],"gr-verktyg":[2388,188],"import-formular":[2408,2126],"klass-att-reda-ut":[1896,596],"klasser-import-forhand":[2408,1368],"klasser-import":[1888,1970],"klasser-lagg-till":[1888,632],"klasser-lista":[1896,1358],"klasser-onskemal":[1128,1738],"klasser-plats-rad":[1872,124],"klasser-plats-strikt":[1128,1030],"klasser-plats":[1128,1030],"klasser-rangordna":[1128,1964],"klasser-sitta-sjalv":[1128,1738],"klassrum-grupprum":[1888,512],"klassrum-mall":[1888,308],"klassrum-rita":[1896,1444],"klassrum-zoner":[1896,1130],"lottning-karta":[2448,1274],"lottning-kontroller":[2448,606],"lottning-rapport":[2448,496],"lottning-spara":[2448,176],"sparade":[2448,478],"uppdateringar":[1128,1538]};
   const fig = (file, caption) =>
     `<figure class="gfig ${(SIZES[file] || [9999])[0] < 1300 ? 'narrow' : ''}"><img src="img/guide/${file}.jpg" width="${(SIZES[file] || [0])[0]}" height="${(SIZES[file] || [0, 0])[1]}" alt="${caption.replace(/<[^>]+>/g, '').replace(/"/g, '&quot;')}" loading="lazy" data-zoom><figcaption>${caption}</figcaption></figure>`;
   const steps = items => `<ol class="gsteps">${items.map(i => `<li>${i}</li>`).join('')}</ol>`;
@@ -186,7 +186,7 @@ Noah, k, med!: en kille</pre>
         ${steps([
           'Gör ett formulär med till exempel frågorna <i>Vad heter du?</i>, <i>Vilken klass går du i?</i> och <i>Vem vill du sitta med?</i> (gärna också <i>Vem vill du inte sitta med?</i>). Vill du ha prioritetsordning kan du ha tre frågor: <i>Önskemål 1</i>, <i>Önskemål 2</i>, <i>Önskemål 3</i>.',
           'När eleverna svarat: öppna svaren i <b>Google Kalkylark</b> (knappen "Länka till Kalkylark" under Svar).',
-          'Antingen: markera kolumnerna inklusive rubrikraden, kopiera och klistra in i rutan <b>Lägg till eller importera elever</b> under Klasser. Eller: ladda ner kalkylarket som Excel (Arkiv → Ladda ned → Microsoft Excel) och använd <b>📄 Importera Excel-fil</b>.',
+          'Antingen: markera cellerna, kopiera och klistra in i rutan <b>Lägg till eller importera elever</b> under Klasser. Rubrikraden behöver inte vara med – det går bra att bara markera några rader. Eller: ladda ner kalkylarket som Excel (Arkiv → Ladda ned → Microsoft Excel) och använd <b>📄 Importera Excel-fil</b>.',
           'Kontrollera förhandsgranskningen: kolumnerna, klasserna och listan <i>Att reda ut</i>.',
           'Tryck på <b>Importera</b>. Lägg sedan till kön och annat som formuläret inte frågade efter.'
         ])}
@@ -195,10 +195,28 @@ Noah, k, med!: en kille</pre>
         <p>Appen gissar vad varje kolumn innehåller utifrån rubriken – <i>Tidstämpel</i> och <i>E-postadress</i> hoppas över, <i>Vad heter du?</i> blir namn och så vidare. Under <b>Kolumner</b> kan du ändra om något blev fel.</p>
         <ul>
           <li>Står förnamn och efternamn i olika kolumner – välj <i>Namn</i> för båda, så slås de ihop.</li>
-          <li>Flera kolumner kan vara <i>Vill sitta med</i>, t.ex. "Önskemål 1", "Önskemål 2", "Önskemål 3". Har de siffror i rubriken räknas de som <b>prioritetsordning</b> (rutan går att kryssa ur).</li>
+          <li>Flera kolumner kan vara <i>Önskemål (fritext)</i>, t.ex. "Önskemål 1", "Önskemål 2", "Önskemål 3". Har de siffror i rubriken räknas de som <b>prioritetsordning</b> (rutan går att kryssa ur).</li>
           <li>Eleverna kan skriva fritt: <i>"Maja och Ella"</i>, <i>"maja, ella"</i>, <i>"jag vill sitta med Maja eller Ella"</i>, <i>"1. Maja 2. Ella"</i>. Svar som <i>"vet inte"</i>, <i>"ingen"</i> och <i>"spelar ingen roll"</i> hoppas över, och <i>"någon tjej"</i> eller <i>"själv"</i> blir allmänna val.</li>
           <li>Namn som skrivits med små bokstäver får stor bokstav: <i>maja lind</i> blir <i>Maja Lind</i>.</li>
         </ul>
+        <h3 id="g-klistra-celler">Klistra in bara några celler</h3>
+        <p>Ofta har du redan lagt in de flesta eleverna och vill bara hämta svaren för en klass. Markera då raderna i kalkylarket – utan rubrikrad – och klistra in. Appen tittar på vad som står i cellerna: korta namn blir <i>Namn</i>, värden som <i>7c</i> eller <i>8A</i> blir <i>Klass</i>, <i>k</i>/<i>t</i> blir <i>Kön</i>, tidsstämplar och e-postadresser hoppas över och längre text blir <i>Önskemål (fritext)</i>.</p>
+        <p>Står kolumnerna i en annan ordning, t.ex. <i>namn, klass, önskemål</i>, fungerar det lika bra. Blev någon kolumn fel ändrar du den under <b>Kolumner</b> – appen <b>kommer ihåg ordningen</b> och använder den nästa gång du klistrar in en tabell med lika många kolumner (eller samma rubriker).</p>
+        ${fig('import-kolumner-gissade', 'Inklistrade celler utan rubrikrad i ordningen namn, klass, önskemål – appen har gissat kolumnerna utifrån innehållet.')}
+        <h3 id="g-fritext">Önskemål i fritext – vill, vill inte och plats</h3>
+        <p>Eleverna skriver ofta allt i samma ruta. Appen delar upp texten:</p>
+        <ul>
+          <li><b>Vill sitta med</b>: <i>"Maja och Hugo"</i>, <i>"med Ella eller Maja"</i>.</li>
+          <li><b>Ska inte sitta med</b>: allt efter <i>inte</i>, <i>ej</i> eller <i>undvik</i> i samma mening – <i>"Maja, inte Hugo"</i>, <i>"Maja men inte bredvid Liam"</i>.</li>
+          <li><b>Plats</b>: <i>längst fram</i>, <i>nära tavlan</i>, <i>längst bak</i>, <i>i mitten</i>, <i>till vänster/höger</i> blir ett mjukt platsönskemål.</li>
+          <li>Sådant som inte går att översätta till rutnätet, t.ex. <i>"vid fönstret"</i> eller <i>"nära dörren"</i>, markeras med ⚠ och eleven kryssas i för <b>Granska senare</b>.</li>
+        </ul>
+        <p>I förhandsgranskningen ser du för varje elev: namnet, vem hen vill och inte vill sitta med, platsen – och sist <b>det eleven faktiskt skrev</b>, så att du kan jämföra.</p>
+        ${fig('import-elevsvar', 'Appens tolkning bredvid det eleven skrev. Ella är redan ikryssad för Granska senare, eftersom "vid fönstret" inte går att översätta till en plats.')}
+        <h3 id="g-granska">Elevens text och Granska senare</h3>
+        <p>Det eleven skrev <b>sparas på eleven</b> och syns under namnet i klasslistan (💬). Bocka ur <i>Visa elevernas svar</i> om du vill dölja texterna.</p>
+        <p>Kryssa i <b>Granska senare</b> i förhandsgranskningen – eller klicka på 🏷 på en rad i klasslistan – för elever du vill titta närmare på. De samlas i rutan <b>Att granska</b> högst upp i klassen, med elevens text, appens tolkning och knappar för att ändra önskemål, "inte med" och plats. Tryck <b>✓ Klar</b> när du är nöjd.</p>
+        ${fig('klass-att-granska', 'Att granska: elevens egen text, appens tolkning och knappar för att rätta.')}
         <h3 id="g-klasskolumn">Klasser – "7c" är samma som "7C"</h3>
         <p>Finns det en klasskolumn grupperar appen raderna efter klass. Stora och små bokstäver, mellanslag och ordet "klass" spelar ingen roll: <i>7c</i>, <i>7C</i>, <i>7 C</i> och <i>Klass 7C</i> räknas som samma klass. Du väljer sedan:</p>
         <ul>
@@ -447,6 +465,8 @@ Noah, k, med!: en kille</pre>
       id: 'g-faq', icon: '💡', title: 'Vanliga frågor', lead: 'Korta svar på sådant som brukar dyka upp.',
       body: () => `
         <dl class="gfaq">
+          <dt>Jag klistrade in celler och klass och önskemål hamnade fel – vad gör jag?</dt>
+          <dd>Öppna <b>Kolumner</b> i förhandsgranskningen och välj rätt för varje kolumn. Appen kommer ihåg ordningen till nästa gång. Se <a href="#" data-gjump="g-klistra-celler">Klistra in bara några celler</a>.</dd>
           <dt>Är en ruta i klassrummet en bänk eller en plats?</dt>
           <dd>En ruta är en plats för en elev. En bänk tar alltid två rutor.</dd>
           <dt>Varför fick inte alla sina önskemål uppfyllda?</dt>

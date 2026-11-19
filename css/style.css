@@ -614,3 +614,23 @@ details.imp-sec > summary { font-size: 14px; }
 .xbtn:hover { color: var(--bad); }
 .btn.small-btn { padding: 4px 10px; font-size: 13px; }
 .aliases .chips { margin-top: 6px; }
+
+/* v1.9 – elevens svar, granska senare */
+.preview-table td.answer { max-width: 260px; font-size: .85em; }
+.preview-table td.answer q, .rv-ans q { font-style: italic; color: var(--ink, #222); }
+.preview-table td.rv { white-space: nowrap; }
+.rvbox { display: inline-flex; align-items: center; gap: 4px; font-size: .8em; cursor: pointer; }
+tr.review > td { background: #fff7e0; }
+.warn-text { color: #a76200; }
+.good-text { color: #2f7d32; }
+.ans { font-size: .75em; color: #666; margin-top: 2px; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: help; }
+.row-acts { white-space: nowrap; }
+.icon.flag { opacity: .35; }
+.icon.flag.on, .icon.flag:hover { opacity: 1; }
+.review-card { border: 1px solid #f0c860; background: #fffaf0; border-radius: 10px; padding: 10px 12px; margin: 10px 0; }
+.rv-item { border-top: 1px solid #f1e2b8; padding: 8px 0; }
+.rv-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rv-btns { display: flex; gap: 4px; flex-wrap: wrap; }
+.rv-ans { margin: 4px 0; font-size: .9em; }
+.rv-int { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+.small-btn { padding: 3px 8px; font-size: .8em; }
